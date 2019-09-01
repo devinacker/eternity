@@ -97,6 +97,7 @@ enum halvdr_e
 {
    VDR_SDLSOFT,
    VDR_SDLGL2D,
+   VDR_SDLGL2DSHADER,
    VDR_MAXDRIVERS
 };
 

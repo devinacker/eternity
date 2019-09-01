@@ -52,6 +52,7 @@
 #include "../sdl/i_sdlvideo.h"
 #ifdef EE_FEATURE_OPENGL
 #include "../sdl/i_sdlgl2d.h"
+#include "../sdl/i_sdlgl2dshader.h"
 #endif
 #endif
 
@@ -91,6 +92,17 @@ const char *const i_videohelpstr =
 // Driver table
 static haldriveritem_t halVideoDriverTable[VDR_MAXDRIVERS] =
 {
+   // SDL GL2D Shader Driver
+   {
+   VDR_SDLGL2DSHADER,
+   "SDL GL2D Shader",
+#if defined(_SDL_VER) && defined(EE_FEATURE_OPENGL)
+      &i_sdlgl2dshadervideodriver
+#else
+      NULL
+#endif
+   },
+
    // SDL GL2D Driver
    {
       VDR_SDLGL2D,
@@ -640,11 +652,12 @@ CONSOLE_VARIABLE(i_videomode, i_videomode, cf_buffered)
    i_default_videomode = estrdup(i_videomode);
 }
 
-static const char *i_videodrivernames[] = 
+static const char *i_videodrivernames[] =
 {
    "default",
    "SDL Software",
-   "SDL GL2D"
+   "SDL GL2D",
+   "SDL GL2D Shader"
 };
 
 VARIABLE_INT(i_videodriverid, NULL, -1, VDR_MAXDRIVERS-1, i_videodrivernames);
