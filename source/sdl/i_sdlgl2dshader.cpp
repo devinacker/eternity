@@ -84,11 +84,18 @@ static GLuint textureid;
 // Bump amount used to avoid cache misses on power-of-two-sized screens
 static int bump;
 
-// Data for vertex binding
-static GLfloat screenVertices[4*2];
-static GLfloat screenTexCoords[4*2];
 
-static const GLubyte screenVtxOrder[3*2] = { 0, 1, 3, 3, 1, 2 };
+// Buffer objects
+static GLuint VBO = 0;
+static GLuint IBO = 0;
+static GLuint FBO = 0;
+
+// Shader variables
+static GLuint program_id;
+static GLint  indices_in_location  = -1;
+static GLint  palette_location     = -1;
+static GLint  tex_size_location    = -1;
+static GLint  in_position_location = -1;
 
 //=============================================================================
 //
@@ -97,11 +104,12 @@ static const GLubyte screenVtxOrder[3*2] = { 0, 1, 3, 3, 1, 2 };
 const GLchar *shader_source_vertex = R"(
 #version 120
 
-layout(location = 0) in vec4 in_position;
+//layout(location = 0) in vec4 in_position;
+in vec2 in_position;
 
 void main()
 {
-   gl_Position = in_position;
+   gl_Position = vec4(in_position.x, in_position.y,  0.0, 1.0);
 }
 )";
 
@@ -111,6 +119,8 @@ uniform sampler2D _Indices_in;
 uniform sampler2D _Palette;
 uniform vec2 tex_size;
 
+varying out vec4 fragColor;
+
 //layout(location = 0) out vec4 out_color;
 
 void main()
@@ -118,9 +128,9 @@ void main()
    float paletteIndex = texture2D(_Indices_in, gl_FragCoord.xy / tex_size).r;
 
    // add half a pixel to the index to fix interpolation issues
-   float4 col = texture2D(_Palette, vec2(paletteIndex + (.5/256.0), 0.0) );
+   vec4 col = texture2D(_Palette, vec2(paletteIndex + (.5/256.0), 0.0) );
    col.a = 1.0;
-   gl_fragColor = col;
+   fragColor = col;
 }
 )";
 
@@ -128,29 +138,6 @@ void main()
 //
 // Graphics Code
 //
-
-//
-// SDLGL2DShaderVideoDriver::DrawPixels
-//
-// Protected method.
-//
-void SDLGL2DShaderVideoDriver::DrawPixels(void *buffer, unsigned int destwidth)
-{
-   //Uint32 *fb = static_cast<Uint32 *>(buffer);
-
-   //for(int y = 0; y < screen->h; y++)
-   //{
-   //   byte   *src  = static_cast<byte *>(screen->pixels) + y * screen->pitch;
-   //   Uint32 *dest = fb + y * destwidth;
-
-   //   for(int x = 0; x < screen->w - bump; x++)
-   //   {
-   //      *dest = RGB8to32[*src];
-   //      ++src;
-   //      ++dest;
-   //   }
-   //}
-}
 
 //
 // SDLGL2DShaderVideoDriver::FinishUpdate
@@ -166,7 +153,30 @@ void SDLGL2DShaderVideoDriver::FinishUpdate()
    if(!(SDL_GetWindowFlags(window) & SDL_WINDOW_SHOWN))
       return;
 
-   // TODO: This
+   // Copy texture to default framebuffer
+   //glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, FBO);
+   //glBlitFramebufferEXT(0, 0, video.width, video.height, 0, 0, video.width, video.height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+   //glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+
+        // Bind program
+   glUseProgram(program_id);
+
+   // Enable vertex position
+   glEnableVertexAttribArray(in_position_location);
+
+   // Set vertex data
+   glBindBuffer(GL_ARRAY_BUFFER, VBO);
+   glVertexAttribPointer(in_position_location, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), nullptr);
+
+   // Set index data and render
+   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
+   glDrawElements(GL_TRIANGLE_FAN, 4, GL_UNSIGNED_INT, nullptr);
+
+   // Disable vertex position
+   glDisableVertexAttribArray(in_position_location);
+
+   // Unbind program
+   glUseProgram(NULL);
 
    // push the frame
    SDL_GL_SwapWindow(window);
@@ -295,6 +305,136 @@ void SDLGL2DShaderVideoDriver::ShutdownGraphicsPartway()
    // Destroy the window
    SDL_DestroyWindow(window);
    window = nullptr;
+}
+
+static void printShaderLog(GLuint shader)
+{
+   // Make sure name is shader
+   if(glIsShader(shader))
+   {
+      // Shader log length
+      int infoLogLength = 0;
+      int maxLength = infoLogLength;
+
+      // Get info string length
+      glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &maxLength);
+
+      // Allocate string
+      char *infoLog = new char[maxLength];
+
+      // Get info log
+      glGetShaderInfoLog(shader, maxLength, &infoLogLength, infoLog);
+      if(infoLogLength > 0)
+         printf("%s\n", infoLog);
+
+      // Deallocate string
+      delete[] infoLog;
+   }
+   else
+      printf("Name %d is not a shader\n", shader);
+}
+
+static void printProgramLog(GLuint program)
+{
+   // Make sure name is shader
+   if(glIsProgram(program))
+   {
+      // Program log length
+      int infoLogLength = 0;
+      int maxLength = infoLogLength;
+
+      // Get info string length
+      glGetProgramiv(program, GL_INFO_LOG_LENGTH, &maxLength);
+
+      // Allocate string
+      char *infoLog = new char[maxLength];
+
+      // Get info log
+      glGetProgramInfoLog(program, maxLength, &infoLogLength, infoLog);
+      if(infoLogLength > 0)
+         printf("%s\n", infoLog);
+
+      // Deallocate string
+      delete[] infoLog;
+   }
+   else
+      printf("Name %d is not a program\n", program);
+}
+
+static void InitShader(GLuint &shader, const GLenum shader_type, const char *shader_source)
+{
+   GLint shadercompiled = GL_FALSE;
+
+   shader = glCreateShader(shader_type);
+   glShaderSource(shader, 1, &shader_source, nullptr);
+   glCompileShader(shader);
+
+   glGetShaderiv(shader, GL_COMPILE_STATUS, &shadercompiled);
+   if(shadercompiled == GL_FALSE)
+   {
+      printShaderLog(shader);
+      I_FatalError(I_ERR_KILL, "InitShader: Ah bugger\n");
+   }
+
+   glAttachShader(program_id, shader);
+}
+
+void SDLGL2DShaderVideoDriver::InitShaders()
+{
+   program_id = glCreateProgram();
+
+   GLuint vertexShader, fragmentShader;
+
+   InitShader(vertexShader, GL_VERTEX_SHADER, shader_source_vertex);
+   InitShader(fragmentShader, GL_FRAGMENT_SHADER, shader_source_fragment);
+
+   glLinkProgram(program_id);
+
+   GLint programSuccess = GL_TRUE;
+   glGetProgramiv(program_id, GL_LINK_STATUS, &programSuccess);
+   if(programSuccess != GL_TRUE)
+   {
+      printProgramLog(program_id);
+      I_FatalError(I_ERR_KILL, "The GL shader program is buggered\n");
+   }
+
+   indices_in_location  = glGetUniformLocation(program_id, "_Indices_in");
+   palette_location     = glGetUniformLocation(program_id, "_Palette");
+   tex_size_location    = glGetUniformLocation(program_id, "tex_size");
+   in_position_location = glGetAttribLocation(program_id, "in_position");
+
+   if(indices_in_location == -1 || palette_location == -1 || tex_size_location == -1 || in_position_location == -1)
+      I_FatalError(I_ERR_KILL, "Fragment shader uniform or uniforms not found\n");
+
+   // Initialize clear color
+   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
+   // VBO data
+   GLfloat vertexData[] =
+   {
+      -1.0f, -1.0f,
+       1.0f, -1.0f,
+       1.0f,  1.0f,
+      -1.0f,  1.0f
+   };
+
+   // IBO data
+   GLuint indexData[] = { 0, 1, 2, 3 };
+
+   // Create VBO
+   glGenBuffers(1, &VBO);
+   glBindBuffer(GL_ARRAY_BUFFER, VBO);
+   glBufferData(GL_ARRAY_BUFFER, 2 * 4 * sizeof(GLfloat), vertexData, GL_STATIC_DRAW);
+
+   // Create IBO
+   glGenBuffers(1, &IBO);
+   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, IBO);
+   glBufferData(GL_ELEMENT_ARRAY_BUFFER, 4 * sizeof(GLuint), indexData, GL_STATIC_DRAW);
+
+   glGenFramebuffersEXT(1, &FBO);
+   glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, FBO);
+   glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, textureid, 0);
+   glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
 }
 
 // Config-to-GL enumeration lookups
@@ -439,6 +579,15 @@ bool SDLGL2DShaderVideoDriver::InitGraphicsMode()
    // calculate right- and bottom-side texture coordinates
    texcoord_smax = static_cast<GLfloat>(v_w) / framebuffer_umax;
    texcoord_tmax = static_cast<GLfloat>(v_h) / framebuffer_vmax;
+   InitShaders();
+
+   // Do texture nonsense
+   glGenTextures(1, &textureid);
+   GL_BindTextureAndRemember(textureid);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1024, 768, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+   // villsa 05/29/11: set filtering otherwise texture won't render
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, texfiltertype);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, texfiltertype);
 
    UpdateFocus(window);
    UpdateGrab(window);

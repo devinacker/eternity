@@ -33,7 +33,7 @@ class SDLGL2DShaderVideoDriver : public HALVideoDriver
 protected:
    int colordepth;
 
-   void DrawPixels(void *buffer, unsigned int width);
+   void InitShaders();
 
    virtual void SetPrimaryBuffer();
    virtual void UnsetPrimaryBuffer();
@@ -51,7 +51,7 @@ public:
    void SetColorDepth(int cd) { colordepth = cd; }
 };
 
-extern SDLGL2DShaderVideoDriver i_sdlgl2shaderdvideodriver;
+extern SDLGL2DShaderVideoDriver i_sdlgl2dshadervideodriver;
 
 #endif
 

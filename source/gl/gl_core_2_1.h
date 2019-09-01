@@ -154,6 +154,7 @@ extern "C" {
 #endif /*__cplusplus*/
 
 extern int ogl_ext_EXT_framebuffer_object;
+extern int ogl_ext_EXT_framebuffer_blit;
 extern int ogl_ext_EXT_texture_compression_s3tc;
 extern int ogl_ext_EXT_texture_sRGB;
 extern int ogl_ext_EXT_texture_filter_anisotropic;
@@ -209,6 +210,11 @@ extern int ogl_ext_EXT_texture_filter_anisotropic;
 #define GL_STENCIL_INDEX1_EXT 0x8D46
 #define GL_STENCIL_INDEX4_EXT 0x8D47
 #define GL_STENCIL_INDEX8_EXT 0x8D48
+
+#define GL_DRAW_FRAMEBUFFER_BINDING_EXT 0x8CA6
+#define GL_DRAW_FRAMEBUFFER_EXT 0x8CA9
+#define GL_READ_FRAMEBUFFER_BINDING_EXT 0x8CAA
+#define GL_READ_FRAMEBUFFER_EXT 0x8CA8
 
 #define GL_COMPRESSED_RGBA_S3TC_DXT1_EXT 0x83F1
 #define GL_COMPRESSED_RGBA_S3TC_DXT3_EXT 0x83F2
@@ -1150,6 +1156,12 @@ extern GLboolean (CODEGEN_FUNCPTR *_ptrc_glIsRenderbufferEXT)(GLuint renderbuffe
 extern void (CODEGEN_FUNCPTR *_ptrc_glRenderbufferStorageEXT)(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
 #define glRenderbufferStorageEXT _ptrc_glRenderbufferStorageEXT
 #endif /*GL_EXT_framebuffer_object*/ 
+
+#ifndef GL_EXT_framebuffer_blit
+#define GL_EXT_framebuffer_blit 1
+extern void (CODEGEN_FUNCPTR *_ptrc_glBlitFramebufferEXT)(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter);
+#define glBlitFramebufferEXT _ptrc_glBlitFramebufferEXT
+#endif /*GL_EXT_framebuffer_blit*/ 
 
 
 

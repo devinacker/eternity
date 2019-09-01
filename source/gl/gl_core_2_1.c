@@ -86,6 +86,7 @@ static PROC WinGetProcAddress(const char *name)
 #endif
 
 int ogl_ext_EXT_framebuffer_object = ogl_LOAD_FAILED;
+int ogl_ext_EXT_framebuffer_blit = ogl_LOAD_FAILED;
 int ogl_ext_EXT_texture_compression_s3tc = ogl_LOAD_FAILED;
 int ogl_ext_EXT_texture_sRGB = ogl_LOAD_FAILED;
 int ogl_ext_EXT_texture_filter_anisotropic = ogl_LOAD_FAILED;
@@ -145,6 +146,16 @@ static int Load_EXT_framebuffer_object(void)
 	if(!_ptrc_glIsRenderbufferEXT) numFailed++;
 	_ptrc_glRenderbufferStorageEXT = (void (CODEGEN_FUNCPTR *)(GLenum, GLenum, GLsizei, GLsizei))IntGetProcAddress("glRenderbufferStorageEXT");
 	if(!_ptrc_glRenderbufferStorageEXT) numFailed++;
+	return numFailed;
+}
+
+void (CODEGEN_FUNCPTR *_ptrc_glBlitFramebufferEXT)(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter) = NULL;
+
+static int Load_EXT_framebuffer_blit(void)
+{
+	int numFailed = 0;
+	_ptrc_glBlitFramebufferEXT = (void (CODEGEN_FUNCPTR *)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum))IntGetProcAddress("glBlitFramebufferEXT");
+	if(!_ptrc_glBlitFramebufferEXT) numFailed++;
 	return numFailed;
 }
 
@@ -1823,14 +1834,15 @@ typedef struct ogl_StrToExtMap_s
 	PFN_LOADFUNCPOINTERS LoadExtension;
 } ogl_StrToExtMap;
 
-static ogl_StrToExtMap ExtensionMap[4] = {
+static ogl_StrToExtMap ExtensionMap[5] = {
 	{"GL_EXT_framebuffer_object", &ogl_ext_EXT_framebuffer_object, Load_EXT_framebuffer_object},
+	{"GL_EXT_framebuffer_blit", &ogl_ext_EXT_framebuffer_blit, Load_EXT_framebuffer_blit},
 	{"GL_EXT_texture_compression_s3tc", &ogl_ext_EXT_texture_compression_s3tc, NULL},
 	{"GL_EXT_texture_sRGB", &ogl_ext_EXT_texture_sRGB, NULL},
 	{"GL_EXT_texture_filter_anisotropic", &ogl_ext_EXT_texture_filter_anisotropic, NULL},
 };
 
-static int g_extensionMapSize = 4;
+static int g_extensionMapSize = 5;
 
 static ogl_StrToExtMap *FindExtEntry(const char *extensionName)
 {
@@ -1848,6 +1860,7 @@ static ogl_StrToExtMap *FindExtEntry(const char *extensionName)
 static void ClearExtensionVars(void)
 {
 	ogl_ext_EXT_framebuffer_object = ogl_LOAD_FAILED;
+	ogl_ext_EXT_framebuffer_blit = ogl_LOAD_FAILED;
 	ogl_ext_EXT_texture_compression_s3tc = ogl_LOAD_FAILED;
 	ogl_ext_EXT_texture_sRGB = ogl_LOAD_FAILED;
 	ogl_ext_EXT_texture_filter_anisotropic = ogl_LOAD_FAILED;
