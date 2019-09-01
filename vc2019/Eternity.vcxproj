@@ -702,6 +702,7 @@
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <ClCompile Include="..\source\gl\gl_core_2_1.c" />
     <ClCompile Include="..\Source\g_bind.cpp">
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -813,6 +814,7 @@
     <ClCompile Include="..\source\p_portalblockmap.cpp" />
     <ClCompile Include="..\source\p_portalclip.cpp" />
     <ClCompile Include="..\source\p_portalcross.cpp" />
+    <ClCompile Include="..\source\sdl\i_sdlgl2dshader.cpp" />
     <ClCompile Include="..\source\sdl\i_sdltimer.cpp" />
     <ClCompile Include="..\source\s_formats.cpp" />
     <ClCompile Include="..\source\s_musinfo.cpp" />
@@ -1951,6 +1953,7 @@
     <ClInclude Include="..\source\e_weapons.h" />
     <ClInclude Include="..\Source\f_finale.h" />
     <ClInclude Include="..\Source\f_wipe.h" />
+    <ClInclude Include="..\source\gl\gl_core_2_1.h" />
     <ClInclude Include="..\Source\g_bind.h" />
     <ClInclude Include="..\source\g_demolog.h" />
     <ClInclude Include="..\Source\g_dmflag.h" />
@@ -1980,6 +1983,7 @@
     <ClInclude Include="..\source\p_things.h" />
     <ClInclude Include="..\source\r_interpolate.h" />
     <ClInclude Include="..\source\r_textur.h" />
+    <ClInclude Include="..\source\sdl\i_sdlgl2dshader.h" />
     <ClInclude Include="..\source\sdl\i_sdltimer.h" />
     <ClInclude Include="..\source\s_formats.h" />
     <ClInclude Include="..\source\s_musinfo.h" />

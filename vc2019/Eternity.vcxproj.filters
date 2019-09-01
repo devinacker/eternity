@@ -1011,6 +1011,12 @@
     <ClCompile Include="..\source\m_debug.cpp">
       <Filter>Source Files\M_\M_ Source</Filter>
     </ClCompile>
+    <ClCompile Include="..\source\sdl\i_sdlgl2dshader.cpp">
+      <Filter>Source Files\SDL\SDL Source</Filter>
+    </ClCompile>
+    <ClCompile Include="..\source\gl\gl_core_2_1.c">
+      <Filter>Source Files\GL\GL Source</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\source\acs_intr.h">
@@ -1801,6 +1807,12 @@
     </ClInclude>
     <ClInclude Include="..\source\m_debug.h">
       <Filter>Source Files\M_\M_ Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\sdl\i_sdlgl2dshader.h">
+      <Filter>Source Files\SDL\SDL Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\source\gl\gl_core_2_1.h">
+      <Filter>Source Files\GL\GL Headers</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
