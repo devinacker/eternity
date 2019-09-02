@@ -117,8 +117,8 @@ void main()
 
 const GLchar *shader_source_fragment = R"(
 #version 120
-uniform sampler2D _Indices_in;
 uniform sampler2D _Palette;
+uniform sampler2D _Indices_in;
 uniform vec2 tex_size;
 
 void main()
@@ -154,16 +154,17 @@ void SDLGL2DShaderVideoDriver::FinishUpdate()
    // Bind program
    glUseProgram(program_id);
 
-   glUniform1i(palette_location, 1);
-   glUniform1i(indices_in_location, 2);
+   //glUniform2fv()
 
    glActiveTexture(GL_TEXTURE0 + 1);
    glBindTexture(GL_TEXTURE_2D, texturepaletteid);
+   glUniform1i(glGetUniformLocation(program_id, "_Palette"), 1);
 
    glActiveTexture(GL_TEXTURE0 + 2);
    glBindTexture(GL_TEXTURE_2D, textureindicesid);
    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, (video.width + bump) * video.height,
                 1, 0, GL_RED, GL_UNSIGNED_BYTE, screen->pixels);
+   glUniform1i(glGetUniformLocation(program_id, "_Indices_in"), 2);
 
    glActiveTexture(GL_TEXTURE0);
    glBindTexture(GL_TEXTURE_2D, textureid);
