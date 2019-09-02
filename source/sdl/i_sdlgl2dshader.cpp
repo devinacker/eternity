@@ -80,6 +80,8 @@ static GLfloat texcoord_tmax;
 
 // GL texture names
 static GLuint textureid;
+static GLuint textureindicesid;
+static GLuint texturepaletteid;
 
 // Bump amount used to avoid cache misses on power-of-two-sized screens
 static int bump;
@@ -149,19 +151,22 @@ void SDLGL2DShaderVideoDriver::FinishUpdate()
    if(!(SDL_GetWindowFlags(window) & SDL_WINDOW_SHOWN))
       return;
 
-
-   //glBindTexture(GL_TEXTURE_2D, textureindicesid);
-   //glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, (video.width + bump) * video.height,
-   //             1, 0, GL_RED, GL_UNSIGNED_BYTE, screen->pixels);/
-
    // Bind program
    glUseProgram(program_id);
 
-   // glUniform1uiv
+   glUniform1i(palette_location, 1);
+   glUniform1i(indices_in_location, 2);
 
-   glUniform1iv(indices_in_location, (video.width + bump) * video.height,
-                reinterpret_cast<const GLint *>(screen->pixels));
-   glUniform1iv(palette_location, 256 * 3, reinterpret_cast<const GLint *>(cachedpal));
+   glActiveTexture(GL_TEXTURE0 + 1);
+   glBindTexture(GL_TEXTURE_2D, texturepaletteid);
+
+   glActiveTexture(GL_TEXTURE0 + 2);
+   glBindTexture(GL_TEXTURE_2D, textureindicesid);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, (video.width + bump) * video.height,
+                1, 0, GL_RED, GL_UNSIGNED_BYTE, screen->pixels);
+
+   glActiveTexture(GL_TEXTURE0);
+   glBindTexture(GL_TEXTURE_2D, textureid);
 
    // Enable vertex position
    glEnableVertexAttribArray(in_position_location);
@@ -232,6 +237,9 @@ void SDLGL2DShaderVideoDriver::SetPalette(byte *pal)
 
       temppal += 3;
    }
+
+   glBindTexture(GL_TEXTURE_2D, texturepaletteid);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, 256 * 3, 1, 0, GL_RED, GL_UNSIGNED_BYTE, cachedpal);
 }
 
 //
@@ -253,6 +261,10 @@ void SDLGL2DShaderVideoDriver::SetPrimaryBuffer()
    // Point screens[0] to 8-bit temp buffer
    video.screens[0] = static_cast<byte *>(screen->pixels);
    video.pitch      = screen->pitch;
+
+   glBindTexture(GL_TEXTURE_2D, textureindicesid);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, (video.width + bump) * video.height,
+                1, 0, GL_RED, GL_UNSIGNED_BYTE, screen->pixels);
 }
 
 //
@@ -576,6 +588,8 @@ bool SDLGL2DShaderVideoDriver::InitGraphicsMode()
    }
    glViewport(0, 0, static_cast<GLsizei>(drawableW), static_cast<GLsizei>(drawableH));
 
+   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
    // Calculate framebuffer texture sizes
    framebuffer_umax = GL_MakeTextureDimension(static_cast<unsigned int>(v_w));
    framebuffer_vmax = GL_MakeTextureDimension(static_cast<unsigned int>(v_h));
@@ -592,6 +606,9 @@ bool SDLGL2DShaderVideoDriver::InitGraphicsMode()
    // villsa 05/29/11: set filtering otherwise texture won't render
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, texfiltertype);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, texfiltertype);
+
+   glGenTextures(1, &textureindicesid);
+   glGenTextures(1, &texturepaletteid);
 
    UpdateFocus(window);
    UpdateGrab(window);
