@@ -119,10 +119,6 @@ uniform sampler2D _Indices_in;
 uniform sampler2D _Palette;
 uniform vec2 tex_size;
 
-varying out vec4 fragColor;
-
-//layout(location = 0) out vec4 out_color;
-
 void main()
 {
    float paletteIndex = texture2D(_Indices_in, gl_FragCoord.xy / tex_size).r;
@@ -130,7 +126,7 @@ void main()
    // add half a pixel to the index to fix interpolation issues
    vec4 col = texture2D(_Palette, vec2(paletteIndex + (.5/256.0), 0.0) );
    col.a = 1.0;
-   fragColor = col;
+   gl_FragColor = col;
 }
 )";
 
@@ -153,13 +149,19 @@ void SDLGL2DShaderVideoDriver::FinishUpdate()
    if(!(SDL_GetWindowFlags(window) & SDL_WINDOW_SHOWN))
       return;
 
-   // Copy texture to default framebuffer
-   //glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, FBO);
-   //glBlitFramebufferEXT(0, 0, video.width, video.height, 0, 0, video.width, video.height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-   //glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
 
-        // Bind program
+   //glBindTexture(GL_TEXTURE_2D, textureindicesid);
+   //glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, (video.width + bump) * video.height,
+   //             1, 0, GL_RED, GL_UNSIGNED_BYTE, screen->pixels);/
+
+   // Bind program
    glUseProgram(program_id);
+
+   // glUniform1uiv
+
+   glUniform1iv(indices_in_location, (video.width + bump) * video.height,
+                reinterpret_cast<const GLint *>(screen->pixels));
+   glUniform1iv(palette_location, 256 * 3, reinterpret_cast<const GLint *>(cachedpal));
 
    // Enable vertex position
    glEnableVertexAttribArray(in_position_location);
@@ -403,8 +405,10 @@ void SDLGL2DShaderVideoDriver::InitShaders()
    tex_size_location    = glGetUniformLocation(program_id, "tex_size");
    in_position_location = glGetAttribLocation(program_id, "in_position");
 
-   if(indices_in_location == -1 || palette_location == -1 || tex_size_location == -1 || in_position_location == -1)
+   if(indices_in_location == -1 || palette_location == -1 || tex_size_location == -1)
       I_FatalError(I_ERR_KILL, "Fragment shader uniform or uniforms not found\n");
+   else if(in_position_location == -1)
+      I_FatalError(I_ERR_KILL, "Vertex shader attribute not found\n");
 
    // Initialize clear color
    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -583,8 +587,8 @@ bool SDLGL2DShaderVideoDriver::InitGraphicsMode()
 
    // Do texture nonsense
    glGenTextures(1, &textureid);
-   GL_BindTextureAndRemember(textureid);
-   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1024, 768, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+   glBindTexture(GL_TEXTURE_2D, textureid);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, video.width + bump, video.height, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
    // villsa 05/29/11: set filtering otherwise texture won't render
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, texfiltertype);
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, texfiltertype);
