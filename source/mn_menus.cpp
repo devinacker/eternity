@@ -41,6 +41,7 @@
 #include "d_io.h"
 #include "d_iwad.h"
 #include "d_main.h"
+#include "d_net.h"
 #include "doomdef.h"
 #include "doomstat.h"
 #include "dhticstr.h" // haleyjd
@@ -54,6 +55,7 @@
 #include "hu_stuff.h" // haleyjd
 #include "i_system.h"
 #include "i_video.h"
+#include "m_buffer.h"
 #include "m_random.h"
 #include "m_swap.h"
 #include "m_utils.h"
@@ -63,6 +65,7 @@
 #include "mn_menus.h"
 #include "mn_misc.h"
 #include "mn_files.h"
+#include "p_saveg.h"
 #include "p_setup.h"
 #include "p_skin.h"
 #include "r_defs.h"
@@ -103,6 +106,13 @@ char *mn_start_mapname;
 
 // haleyjd: keep track of valid save slots
 bool savegamepresent[SAVESLOTS];
+
+// and more...
+int  savegameversion[SAVESLOTS];
+int  savegameskill[SAVESLOTS];
+char savegamemap[SAVESLOTS][9];
+int  savegameleveltime[SAVESLOTS];
+char *savegamefiletime[SAVESLOTS];
 
 static void MN_InitCustomMenu();
 static void MN_InitSearchStr();
@@ -1343,41 +1353,155 @@ void MN_CreateSaveCmds()
 //
 static void MN_ReadSaveStrings()
 {
+   extern int version;
+
    for(int i = 0; i < SAVESLOTS; i++)
    {
       char *name = NULL;    // killough 3/22/98
       size_t len;
+      int dummy;
+      bool bdummy;
       char description[SAVESTRINGSIZE+1]; // sf
-      FILE *fp;  // killough 11/98: change to use stdio
+      char vread[VERSIONSIZE];
+      InBuffer loadfile;
+      SaveArchive arc(&loadfile);
 
       len = M_StringAlloca(&name, 2, 26, basesavegame, savegamename);
 
       G_SaveGameName(name, len, i);
 
-      // haleyjd: fraggle got rid of this - perhaps cause of the crash?
-      //          I've re-implemented it below to try to resolve the
-      //          zoneid check error -- bingo, along with new init code.
-      // if(savegamenames[i])
-      //  Z_Free(savegamenames[i]);
-
-      fp = fopen(name,"rb");
-      if(!fp)
+      if (!loadfile.openFile(name, InBuffer::NENDIAN))
       {   // Ty 03/27/98 - externalized:
          // haleyjd
          if(savegamenames[i])
             Z_Free(savegamenames[i]);
          savegamenames[i] = Z_Strdup(DEH_String("EMPTYSTRING"), PU_STATIC, 0);
+         savegamepresent[i] = false;
          continue;
       }
 
+      savegamepresent[i] = true;
+
+      // file time
+      struct stat statbuf;
+      if (!stat(name, &statbuf))
+      {
+         char timestr[64 + 1];
+         strftime(timestr, sizeof(timestr), "%a. %b %d %Y\n%r", localtime(&statbuf.st_mtime));
+         if (savegamefiletime[i])
+            Z_Free(savegamefiletime[i]);
+         savegamefiletime[i] = Z_Strdup(timestr, PU_STATIC, 0);
+      }
+
+      // description
       memset(description, 0, sizeof(description));
-      if(fread(description, SAVESTRINGSIZE, 1, fp) < 1)
-         doom_printf("%s", FC_ERROR "Warning: savestring read failed");
+      arc.archiveCString(description, SAVESTRINGSIZE);
       if(savegamenames[i])
          Z_Free(savegamenames[i]);
       savegamenames[i] = Z_Strdup(description, PU_STATIC, 0);  // haleyjd
-      savegamepresent[i] = true;
-      fclose(fp);
+
+      // version
+      arc.archiveCString(vread, VERSIONSIZE);
+      sscanf(vread, VERSIONID, &savegameversion[i]);
+
+      if (savegameversion[i] != version)
+      {
+         // don't try to load anything else...
+         loadfile.close();
+         continue;
+      }
+
+      // compatibility
+      arc << dummy;
+      // skill level
+      arc << savegameskill[i];
+      // managed dir
+      arc << dummy;
+      // vanilla mode
+      arc << bdummy;
+
+      // map
+      for (int j = 0; j < 8; j++)
+      {
+         int8_t lvc;
+         arc << lvc;
+         savegamemap[i][j] = (char)lvc;
+      }
+      savegamemap[i][8] = '\0';
+
+      // skip managed directory stuff
+      arc.archiveSize(len);
+      loadfile.skip(len);
+
+      // skip players
+      for (int j = 0; j < MIN_MAXPLAYERS; j++)
+      {
+         arc << bdummy;
+      }
+
+      // music num, gametype
+      arc << dummy << dummy;
+
+      // skip options
+      byte options[GAME_OPTION_SIZE];
+      loadfile.read(options, sizeof(options));
+
+      // level time
+      arc << savegameleveltime[i];
+
+      loadfile.close();
+   }
+}
+
+static void MN_DrawSaveInfo(int savenum)
+{
+   const int x = 23 * 8;
+   const int y = 40;
+   const int h = 7 * 8;
+   const int lineh = menu_font->cy;
+   const int namew = MN_StringWidth("xxxxxx");
+
+   extern int version;
+
+   if (savenum < SAVESLOTS && savegamepresent[savenum])
+   {
+      char temp[32 + 1];
+
+      int time, hours, minutes, seconds;
+
+      V_DrawBox(x, y, SCREENWIDTH - x, h);
+
+      MN_WriteTextColored(savegamefiletime[savenum], GameModeInfo->infoColor, x + 4, y + 4);
+
+      if (savegameversion[savenum] == version)
+      {
+         MN_WriteTextColored("map:", GameModeInfo->infoColor, x + 4, y + (lineh * 3) + 4);
+         MN_WriteTextColored(savegamemap[savenum], GameModeInfo->infoColor, x + namew + 4, y + (lineh * 3) + 4);
+
+         MN_WriteTextColored("skill:", GameModeInfo->infoColor, x + 4, y + (lineh * 4) + 4);
+         snprintf(temp, sizeof(temp), "%d", savegameskill[savenum]);
+         MN_WriteTextColored(temp, GameModeInfo->infoColor, x + namew + 4, y + (lineh * 4) + 4);
+
+         time = savegameleveltime[savenum] / TICRATE;
+
+         hours = time / 3600;
+         time -= hours * 3600;
+
+         minutes = time / 60;
+         time -= minutes * 60;
+
+         seconds = time;
+
+         MN_WriteTextColored("time:", GameModeInfo->infoColor, x + 4, y + (lineh * 5) + 4);
+         snprintf(temp, sizeof(temp), "%02d:%02d:%02d", hours, minutes, seconds);
+         MN_WriteTextColored(temp, GameModeInfo->infoColor, x + namew + 4, y + (lineh * 5) + 4);
+      }
+      else
+      {
+         MN_WriteTextColored("warning:", GameModeInfo->unselectColor, x + 4, y + (lineh * 3) + 4);
+         sprintf(temp, "saved in version %d.%02d", savegameversion[savenum] / 100, savegameversion[savenum] % 100);
+         MN_WriteTextColored(temp, GameModeInfo->infoColor, x + 4, y + (lineh * 4) + 4);
+      }
    }
 }
 
@@ -1409,7 +1533,7 @@ menu_t menu_loadgame =
 {
    mn_loadgame_items,
    NULL, NULL, NULL,                 // pages
-   80, 44,                           // x, y
+   10, 44,                           // x, y
    0,                                // starting slot
    mf_leftaligned,
    MN_LoadGameDrawer,
@@ -1420,23 +1544,19 @@ static void MN_LoadGameDrawer()
 {
    static char *emptystr = NULL;
 
-   int lumpnum = W_CheckNumForName("M_LGTTL");
-
-   if(mn_classic_menus || lumpnum == -1)
-      lumpnum = W_CheckNumForName("M_LOADG");
-
-   V_DrawPatch(72, 18, &subscreen43,
-               PatchLoader::CacheNum(wGlobalDir, lumpnum, PU_CACHE));
+   patch_t *patch = PatchLoader::CacheName(wGlobalDir, "M_LOADG", PU_CACHE);
+   V_DrawPatch((SCREENWIDTH - patch->width) >> 1, 18, &subscreen43, patch);
 
    if(!emptystr)
       emptystr = estrdup(DEH_String("EMPTYSTRING"));
    
-   V_DrawBox(menu_loadgame.x - 8, menu_loadgame.y - 4, 23 * 8, 8 * 16);
+   V_DrawBox(menu_loadgame.x - 10, menu_loadgame.y - 4, 23 * 8, 8 * 16);
    for(int i = 0;  i < SAVESLOTS; i++)
    {
       menu_loadgame.menuitems[i].description =
          savegamenames[i] ? savegamenames[i] : emptystr;
    }
+   MN_DrawSaveInfo(menu_loadgame.selected);
 }
 
 CONSOLE_COMMAND(mn_loadgame, 0)
@@ -1563,7 +1683,7 @@ menu_t menu_savegame =
 {
    mn_savegame_items,
    NULL, NULL, NULL,                 // pages
-   80, 44,                           // x, y
+   10, 44,                           // x, y
    0,                                // starting slot
    mf_leftaligned,
    MN_SaveGameDrawer,
@@ -1571,15 +1691,11 @@ menu_t menu_savegame =
 
 static void MN_SaveGameDrawer()
 {
-   int lumpnum = W_CheckNumForName("M_SGTTL");
+   patch_t *patch = PatchLoader::CacheName(wGlobalDir, "M_SAVEG", PU_CACHE);
+   V_DrawPatch((SCREENWIDTH - patch->width) >> 1, 18, &subscreen43, patch);
 
-   if(mn_classic_menus || lumpnum == -1)
-      lumpnum = W_CheckNumForName("M_SAVEG");
-
-   V_DrawPatch(72, 18, &subscreen43,
-               PatchLoader::CacheNum(wGlobalDir, lumpnum, PU_CACHE));
-
-   V_DrawBox(menu_savegame.x - 8, menu_savegame.y - 4, 23 * 8, 8 * 16);
+   V_DrawBox(menu_savegame.x - 10, menu_savegame.y - 4, 23 * 8, 8 * 16);
+   MN_DrawSaveInfo(menu_savegame.selected);
 }
 
 CONSOLE_COMMAND(mn_savegame, 0)
