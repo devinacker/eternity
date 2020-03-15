@@ -131,7 +131,10 @@ void MenuItem::drawDescription(menuitem_t *item, int &item_height,
    MN_SetLeftSmallPtr(x, y, item_height);
 
    // right pointer:
-   MN_SetRightSmallPtr(x, y, item_width, item_height);
+   if (item_width)
+      MN_SetRightSmallPtr(x, y, item_width, item_height);
+   else // shitty hack for save menu
+      MN_SetRightSmallPtr(SCREENWIDTH, 0, 0, 0);
 }
 
 //=============================================================================

@@ -205,6 +205,7 @@ int     dclicks2;
 double joyaxes[axis_max];
 
 int  savegameslot;
+int  savegamebase;
 char savedescription[32];
 
 //jff 3/24/98 declare startskill external, define defaultskill here
@@ -1976,7 +1977,8 @@ void G_LoadGame(const char *name, int slot, bool command)
    if(savename)
       efree(savename);
    savename = estrdup(name);
-   savegameslot = slot;
+   savegameslot = slot & 7;
+   savegamebase = slot >> 3;
    gameaction = ga_loadgame;
    forced_loadgame = false;
    command_loadgame = command;
@@ -2005,7 +2007,8 @@ static void G_LoadGameErr(char *msg)
 
 void G_SaveGame(int slot, const char *description)
 {
-   savegameslot = slot;
+   savegameslot = slot & 7;
+   savegamebase = slot >> 3;
    strcpy(savedescription, description);
    sendsave = true;
    hub_changelevel = false;
@@ -2083,7 +2086,7 @@ static void G_DoSaveGame(void)
    char *name = NULL;
    size_t len = M_StringAlloca(&name, 2, 26, basesavegame, savegamename);
    
-   G_SaveGameName(name, len, savegameslot);
+   G_SaveGameName(name, len, savegameslot | (savegamebase << 3));
    
    P_SaveCurrentLevel(name, savedescription);
    
@@ -2294,8 +2297,10 @@ void G_Ticker()
                }
             }
             
-            if(players[i].cmd.buttons & BTS_SAVEGAME)
+            if(!netgame && players[i].cmd.buttons & BTS_SAVEGAME)
             {
+               // don't do this anymore in negtames
+               // since we're supporting more save slots than ticcmd_t does
                if(!savedescription[0])
                   strcpy(savedescription, "NET GAME");
                savegameslot =
