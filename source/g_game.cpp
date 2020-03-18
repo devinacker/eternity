@@ -205,7 +205,6 @@ int     dclicks2;
 double joyaxes[axis_max];
 
 int  savegameslot;
-int  savegamebase;
 char savedescription[32];
 
 //jff 3/24/98 declare startskill external, define defaultskill here
@@ -677,7 +676,7 @@ void G_BuildTiccmd(ticcmd_t *cmd)
    if(sendsave && !demoplayback)
    {
       sendsave = false;
-      cmd->buttons = BT_SPECIAL | BTS_SAVEGAME | (savegameslot << BTS_SAVESHIFT);
+      cmd->buttons = BT_SPECIAL | BTS_SAVEGAME;
    }
 
    mousex = mousey = 0.0;
@@ -1977,8 +1976,7 @@ void G_LoadGame(const char *name, int slot, bool command)
    if(savename)
       efree(savename);
    savename = estrdup(name);
-   savegameslot = slot & 7;
-   savegamebase = slot >> 3;
+   savegameslot = slot;
    gameaction = ga_loadgame;
    forced_loadgame = false;
    command_loadgame = command;
@@ -2007,8 +2005,7 @@ static void G_LoadGameErr(char *msg)
 
 void G_SaveGame(int slot, const char *description)
 {
-   savegameslot = slot & 7;
-   savegamebase = slot >> 3;
+   savegameslot = slot;
    strcpy(savedescription, description);
    sendsave = true;
    hub_changelevel = false;
@@ -2086,7 +2083,7 @@ static void G_DoSaveGame(void)
    char *name = NULL;
    size_t len = M_StringAlloca(&name, 2, 26, basesavegame, savegamename);
    
-   G_SaveGameName(name, len, savegameslot | (savegamebase << 3));
+   G_SaveGameName(name, len, savegameslot);
    
    P_SaveCurrentLevel(name, savedescription);
    
@@ -2299,12 +2296,8 @@ void G_Ticker()
             
             if(!netgame && players[i].cmd.buttons & BTS_SAVEGAME)
             {
-               // don't do this anymore in negtames
+               // don't do this anymore in netgames
                // since we're supporting more save slots than ticcmd_t does
-               if(!savedescription[0])
-                  strcpy(savedescription, "NET GAME");
-               savegameslot =
-                  (players[i].cmd.buttons & BTS_SAVEMASK)>>BTS_SAVESHIFT;
                gameaction = ga_savegame;
             }
          }
