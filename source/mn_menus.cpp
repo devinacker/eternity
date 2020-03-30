@@ -1601,7 +1601,10 @@ CONSOLE_COMMAND(mn_load, 0)
    
    G_SaveGameName(name, len, slot);
    G_LoadGame(name, slot, false);
-   
+
+   if (quickSaveSlot == -2)
+      quickSaveSlot = slot;
+
    MN_ClearMenus();
 
    // haleyjd 10/08/08: GIF_SAVESOUND flag
@@ -1630,7 +1633,9 @@ CONSOLE_COMMAND(quickload, 0)
 
    if(quickSaveSlot < 0)
    {
-      MN_Alert("%s", DEH_String("QSAVESPOT"));
+      quickSaveSlot = -2; // means to pick a slot now
+      MN_ReadSaveStrings();
+      MN_StartMenu(GameModeInfo->loadMenu);
       return;
    }
    
