@@ -108,11 +108,11 @@ char *mn_start_mapname;
 bool savegamepresent[SAVESLOTS];
 
 // and more...
-int  savegameversion[SAVESLOTS];
-int  savegameskill[SAVESLOTS];
-char savegamemap[SAVESLOTS][9];
-int  savegameleveltime[SAVESLOTS];
-char *savegamefiletime[SAVESLOTS];
+int32_t savegameversion[SAVESLOTS];
+int32_t savegameskill[SAVESLOTS];
+char    savegamemap[SAVESLOTS][9];
+int32_t savegameleveltime[SAVESLOTS];
+char   *savegamefiletime[SAVESLOTS];
 
 static void MN_InitCustomMenu();
 static void MN_InitSearchStr();
@@ -1353,8 +1353,6 @@ void MN_CreateSaveCmds()
 //
 static void MN_ReadSaveStrings()
 {
-   extern int version;
-
    for(int i = 0; i < SAVESLOTS; i++)
    {
       char *name = nullptr;    // killough 3/22/98
@@ -1402,13 +1400,16 @@ static void MN_ReadSaveStrings()
 
       // version
       arc.archiveCString(vread, VERSIONSIZE);
-      sscanf(vread, VERSIONID, &savegameversion[i]);
-
-      if (savegameversion[i] != version)
+      if (strncmp(vread, "EE", 2))
       {
+         savegameversion[i] = 0;
          // don't try to load anything else...
          loadfile.close();
          continue;
+      }
+      else
+      {
+         arc << savegameversion[i];
       }
 
       // compatibility
@@ -1461,8 +1462,6 @@ static void MN_DrawSaveInfo(int savenum)
    const int lineh = menu_font->cy;
    const int namew = MN_StringWidth("xxxxxx");
 
-   extern int version;
-
    if (savenum < SAVESLOTS && savegamepresent[savenum])
    {
       char temp[32 + 1];
@@ -1473,7 +1472,7 @@ static void MN_DrawSaveInfo(int savenum)
 
       MN_WriteTextColored(savegamefiletime[savenum], GameModeInfo->infoColor, x + 4, y + 4);
 
-      if (savegameversion[savenum] == version)
+      if (savegameversion[savenum] > 0)
       {
          MN_WriteTextColored("map:", GameModeInfo->infoColor, x + 4, y + (lineh * 3) + 4);
          MN_WriteTextColored(savegamemap[savenum], GameModeInfo->infoColor, x + namew + 4, y + (lineh * 3) + 4);
@@ -1499,8 +1498,7 @@ static void MN_DrawSaveInfo(int savenum)
       else
       {
          MN_WriteTextColored("warning:", GameModeInfo->unselectColor, x + 4, y + (lineh * 3) + 4);
-         sprintf(temp, "saved in version %d.%02d", savegameversion[savenum] / 100, savegameversion[savenum] % 100);
-         MN_WriteTextColored(temp, GameModeInfo->infoColor, x + 4, y + (lineh * 4) + 4);
+         MN_WriteTextColored("save is too old!", GameModeInfo->infoColor, x + 4, y + (lineh * 4) + 4);
       }
    }
 }
