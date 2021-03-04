@@ -27,9 +27,11 @@
 #ifndef M_RANDOM_H__
 #define M_RANDOM_H__
 
+#include "d_keywds.h"
+
 //#define RANDOM_LOG
 #ifdef RANDOM_LOG
-void M_RandomLog(const char *format, ...);
+void M_RandomLog(E_FORMAT_STRING(const char *format), ...) E_PRINTF(1, 2);
 #else
 #define M_RandomLog(...)
 #endif
@@ -247,19 +249,26 @@ typedef enum {
   pr_hereticartiteleport, // A_ArtiTele
   pr_puffblood,   // P_shootThing draw blood when Heretic-like puff is defined
   pr_nailbombshoot,  // A_Nailbomb random damage
+  pr_chainwiggle, // ST_HticTicker
+  pr_envirospot,
+  pr_envirotics,
 
   pr_spawnexchance,           // [XA] 02/28/2020: A_SpawnEx spawnchance
   pr_seekermissile,           // A_SeekerMissile
+
+  pr_wpnreadysnd,
+
+  pr_enviroticsend,
 
   NUMPRCLASS                  // MUST be last item in list
 } pr_class_t;
 
 // The random number generator's state.
-typedef struct rng_s
+struct rng_t
 {
    unsigned int  seed[NUMPRCLASS];      // Each block's random seed
    int rndindex, prndindex;             // For compatibility support
-} rng_t;
+};
 
 extern rng_t rng;                      // The rng's state
 
@@ -278,6 +287,8 @@ int P_SubRandom(pr_class_t);
 int P_RangeRandom(pr_class_t pr_class, int min, int max);
 
 #define M_RangeRandom(min, max) P_RangeRandom(pr_misc, (min), (max))
+
+int M_VHereticPRandom(pr_class_t pr_class);
 
 // haleyjd 03/16/09: extended random functions
 unsigned int P_RandomEx(pr_class_t);

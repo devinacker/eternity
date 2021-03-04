@@ -229,7 +229,7 @@ void A_Turn(actionargs_t *actionargs)
    {
    default:
    case 0: // default, compatibility mode
-      angle = static_cast<angle_t>(static_cast<uint64_t>(mo->state->misc1) << 32) / 360;
+      angle = static_cast<angle_t>((static_cast<uint64_t>(mo->state->misc1) << 32) / 360);
       break;
    case 1: // use a counter as degrees
       cnum = E_ArgAsInt(args, 1, 0);
@@ -367,7 +367,7 @@ void A_Scratch(actionargs_t *actionargs)
 void A_PlaySound(actionargs_t *actionargs)
 {
    Mobj *mo = actionargs->actor;
-   S_StartSound(mo->state->misc2 ? NULL : mo, mo->state->misc1);
+   S_StartSound(mo->state->misc2 ? nullptr : mo, mo->state->misc1);
 }
 
 void A_RandomJump(actionargs_t *actionargs)
@@ -510,7 +510,7 @@ static dehflags_t spawnex_flaglist[] =
    { "absolutevelocity", SPAWNEX_ABSOLUTEVELOCITY },
    { "absoluteposition", SPAWNEX_ABSOLUTEPOSITION },
    { "checkposition"   , SPAWNEX_CHECKPOSITION    },
-   { NULL,        0 }
+   { nullptr,            0 }
 };
 
 static dehflagset_t spawnex_flagset =
@@ -534,7 +534,7 @@ static dehflagset_t spawnex_flagset =
 // args[6] -- y-velocity
 // args[7] -- z-velocity
 // args[8] -- angle
-// args[9] -- chance (out of 255) for the object to spawn; default is 255.
+// args[9] -- chance (out of 256) for the object to spawn; default is 256.
 //
 void A_SpawnEx(actionargs_t *actionargs)
 {
@@ -585,11 +585,23 @@ void A_SpawnEx(actionargs_t *actionargs)
 
    if((flags & SPAWNEX_CHECKPOSITION) && !P_CheckPositionExt(mo, mo->x, mo->y, mo->z))
       mo->remove();
-   else {
+   else
+   {
       mo->angle = angle;
       mo->momx = xvel;
       mo->momy = yvel;
       mo->momz = zvel;
+
+      // TODO: Flag to make it set tracer?
+      // If we're spawning a projectile then we want to set its target as its owner
+      if(mo->flags & MF_MISSILE)
+      {
+         // If the spawner is (or spawned as) a projectile then set target as spawner's owner (if it exists)
+         if(((actor->flags & MF_MISSILE) || actor->info->flags & MF_MISSILE) && actor->target)
+            P_SetTarget<Mobj>(&mo->target, actor->target);
+         else
+            P_SetTarget<Mobj>(&mo->target, actor);
+      }
    }
 }
 
@@ -724,11 +736,11 @@ void A_StartScript(actionargs_t *actionargs)
          for(int i = 0; i < argc; ++i)
              argv[i] = E_ArgAsInt(args, i + 2, 0);
 
-         ACS_ExecuteScriptIResult(scriptnum, argv, argc, actor, NULL, 0, nullptr);
+         ACS_ExecuteScriptIResult(scriptnum, argv, argc, actor, nullptr, 0, nullptr);
       }
       else
       {
-         ACS_ExecuteScriptIResult(scriptnum, NULL, 0, actor, NULL, 0, nullptr);
+         ACS_ExecuteScriptIResult(scriptnum, nullptr, 0, actor, nullptr, 0, nullptr);
       }
    }
 }
@@ -761,11 +773,11 @@ void A_StartScriptNamed(actionargs_t *actionargs)
          for(int i = 0; i < argc; ++i)
              argv[i] = E_ArgAsInt(args, i + 2, 0);
 
-         ACS_ExecuteScriptSResult(scriptname, argv, argc, actor, NULL, 0, nullptr);
+         ACS_ExecuteScriptSResult(scriptname, argv, argc, actor, nullptr, 0, nullptr);
       }
       else
       {
-         ACS_ExecuteScriptSResult(scriptname, NULL, 0, actor, NULL, 0, nullptr);
+         ACS_ExecuteScriptSResult(scriptname, nullptr, 0, actor, nullptr, 0, nullptr);
       }
    }
 }
@@ -1080,16 +1092,9 @@ void A_MissileSpread(actionargs_t *actionargs)
    for(i = 0; i < num; ++i)
    {
       // calculate z momentum
-#ifdef R_LINKEDPORTALS
       momz = P_MissileMomz(getTargetX(actor) - actor->x,
                            getTargetY(actor) - actor->y,
-                           getTargetZ(actor) - actor->z,
-#else
-      momz = P_MissileMomz(actor->target->x - actor->x,
-                           actor->target->y - actor->y,
-                           actor->target->z - actor->z,
-#endif
-                           mobjinfo[type]->speed);
+                           getTargetZ(actor) - actor->z, mobjinfo[type]->speed);
 
       P_SpawnMissileAngle(actor, type, ang, momz, z);
 
@@ -1259,7 +1264,7 @@ void A_ThingSummon(actionargs_t *actionargs)
    // ioanch 20160107: spawn past portals in front of spawner
    v2fixed_t relpos = { actor->x + FixedMul(prestep, finecosine[an]),
                         actor->y + FixedMul(prestep, finesine[an]) };
-   v2fixed_t pos = P_LinePortalCrossing(*actor, relpos - *actor);
+   v2fixed_t pos = P_LinePortalCrossing(*actor, relpos - v2fixed_t{ actor->x, actor->y });
 
    x = pos.x;
    y = pos.y;
@@ -1280,18 +1285,18 @@ void A_ThingSummon(actionargs_t *actionargs)
 
    // ioanch 20160107: consider sectors when killing things stuck in floor or
    // ceiling. Also remove redundant parentheses.
-   const sector_t *csector = P_ExtremeSectorAtPoint(newmobj, true);
-   const sector_t *fsector = P_ExtremeSectorAtPoint(newmobj, false);
-   
-   if(newmobj->z > csector->ceilingheight - newmobj->height ||
-      newmobj->z < fsector->floorheight)
+   const sector_t *csector = P_ExtremeSectorAtPoint(newmobj, surf_ceil);
+   const sector_t *fsector = P_ExtremeSectorAtPoint(newmobj, surf_floor);
+
+   if(newmobj->z > csector->srf.ceiling.height - newmobj->height ||
+      newmobj->z < fsector->srf.floor.height)
    {
       actionargs_t dieaction;
 
       dieaction.actiontype = actionargs_t::MOBJFRAME;
       dieaction.actor      = newmobj;
       dieaction.args       = ESAFEARGS(newmobj);
-      dieaction.pspr       = NULL;
+      dieaction.pspr       = nullptr;
 
       // kill it immediately
       switch(kill_or_remove)
@@ -1322,7 +1327,7 @@ void A_ThingSummon(actionargs_t *actionargs)
       dieaction.actiontype = actionargs_t::MOBJFRAME;
       dieaction.actor      = newmobj;
       dieaction.args       = ESAFEARGS(newmobj);
-      dieaction.pspr       = NULL;
+      dieaction.pspr       = nullptr;
 
       // kill it immediately
       switch(kill_or_remove)
@@ -1369,7 +1374,7 @@ void A_KillChildren(actionargs_t *actionargs)
          dieaction.actiontype = actionargs_t::MOBJFRAME;
          dieaction.actor      = mo;
          dieaction.args       = ESAFEARGS(mo);
-         dieaction.pspr       = NULL;
+         dieaction.pspr       = nullptr;
 
          switch(kill_or_remove)
          {
@@ -1395,7 +1400,7 @@ void A_AproxDistance(actionargs_t *actionargs)
 {
    Mobj      *actor = actionargs->actor;
    arglist_t *args  = actionargs->args;
-   int *dest = NULL;
+   int *dest = nullptr;
    fixed_t distance;
    int cnum;
 
@@ -1412,13 +1417,7 @@ void A_AproxDistance(actionargs_t *actionargs)
       return;
    }
    
-#ifdef R_LINKEDPORTALS
-   distance = P_AproxDistance(actor->x - getTargetX(actor), 
-                              actor->y - getTargetY(actor));
-#else   
-   distance = P_AproxDistance(actor->x - actor->target->x, 
-                              actor->y - actor->target->y);
-#endif
+   distance = P_AproxDistance(actor->x - getTargetX(actor), actor->y - getTargetY(actor));
 
    *dest = distance >> FRACBITS;
 }

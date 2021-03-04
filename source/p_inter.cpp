@@ -42,6 +42,7 @@
 #include "e_lib.h"
 #include "e_metastate.h"
 #include "e_mod.h"
+#include "e_player.h"
 #include "e_states.h"
 #include "e_string.h"
 #include "e_things.h"
@@ -124,9 +125,18 @@ static bool P_GiveAmmo(player_t *player, itemeffect_t *ammo, int num, bool ignor
    if(demo_version >= 401 &&
       (!player->readyweapon || (player->readyweapon->flags & WPF_AUTOSWITCHFROM)))
    {
-      player->pendingweapon = E_FindBestBetterWeaponUsingAmmo(player, ammo);
-      if(player->pendingweapon)
-         player->pendingweaponslot = E_FindFirstWeaponSlot(player, player->pendingweapon);
+      // FIXME: This assumes that the powered variant has the same
+      // ammo usage as the unpowered variant, which is not always true
+      if(weaponinfo_t *const wp = E_FindBestBetterWeaponUsingAmmo(player, ammo); wp)
+      {
+         weaponinfo_t *sister = wp->sisterWeapon;
+         if(player->powers[pw_weaponlevel2] && E_IsPoweredVariant(sister))
+            player->pendingweapon = sister;
+         else
+            player->pendingweapon = wp;
+
+         player->pendingweaponslot = E_FindFirstWeaponSlot(player, wp);
+      }
    }
    else if(!strcasecmp(ammo->getKey(), "AmmoClip"))
    {
@@ -296,12 +306,40 @@ static bool P_giveWeaponCompat(player_t *player, const itemeffect_t *giver, bool
 }
 
 //
+// Check if player should switch to new weapon upon picking it up. It's assumed as unowned yet.
+//
+static bool P_shouldSwitchToNewWeapon(const player_t &player, const weaponinfo_t &newWeapon)
+{
+   if(!(GameModeInfo->flags & GIF_WPNSWITCHSUPER))
+      return true;   // no limiting flag? Always switch
+
+   const weaponinfo_t *curWeapon = player.readyweapon;
+   if(E_IsPoweredVariant(curWeapon))
+      curWeapon = curWeapon->sisterWeapon;
+
+   for(const weaponslot_t *slot : player.pclass->weaponslots)
+   {
+      for(const BDListItem<weaponslot_t> *item = E_LastInSlot(slot); !item->isDummy();
+          item = item->bdPrev)
+      {
+         weapontype_t firstId = item->bdObject->weapon->id;
+         if(firstId == curWeapon->id)  // first encountered weapon is mine? Switch.
+            return true;
+         if(firstId == newWeapon.id)   // first encountered weapon is the picked one? Don't switch.
+            return false;
+      }
+   }
+   // We found neither ids in the possession? Weird case, but switch
+   return true;
+}
+
+//
 // The weapon name may have a MF_DROPPED flag ored in.
 //
 static bool P_giveWeapon(player_t *player, const itemeffect_t *giver, bool dropped, Mobj *special,
                          const char *sound)
 {
-   if(demo_version < 401)
+   if(demo_version < 401 && !vanilla_heretic)
       return P_giveWeaponCompat(player, giver, dropped, special, sound);
 
    bool gaveammo = false;
@@ -379,11 +417,14 @@ static bool P_giveWeapon(player_t *player, const itemeffect_t *giver, bool dropp
    }
    else if(!E_PlayerOwnsWeapon(player, wp))
    {
-      weaponinfo_t *sister = wp->sisterWeapon;
-      player->pendingweapon = wp;
-      player->pendingweaponslot = E_FindFirstWeaponSlot(player, wp);
-      if(player->powers[pw_weaponlevel2] && E_IsPoweredVariant(sister))
-         player->pendingweapon = sister;
+      if(P_shouldSwitchToNewWeapon(*player, *wp))
+      {
+         weaponinfo_t *sister = wp->sisterWeapon;
+         player->pendingweapon = wp;
+         player->pendingweaponslot = E_FindFirstWeaponSlot(player, wp);
+         if(player->powers[pw_weaponlevel2] && E_IsPoweredVariant(sister))
+            player->pendingweapon = sister;
+      }
       E_GiveWeapon(player, wp);
       return true;
    }
@@ -862,7 +903,7 @@ void P_TouchSpecialThing(Mobj *special, Mobj *toucher)
 void P_DropItems(Mobj *actor, bool tossitems)
 {
    MetaTable    *meta = actor->info->meta;
-   MetaDropItem *mdi  = NULL;
+   MetaDropItem *mdi  = nullptr;
 
    // players only drop items if so indicated
    if(actor->player && !(dmflags & DM_PLAYERDROP))
@@ -915,6 +956,10 @@ static void P_KillMobj(Mobj *source, Mobj *target, emod_t *mod)
 {
    target->flags &= ~(MF_SHOOTABLE|MF_FLOAT|MF_SKULLFLY);
    target->flags2 &= ~MF2_INVULNERABLE; // haleyjd 04/09/99
+   target->intflags &= ~MIF_SKULLFLYSEE;
+   // VANILLA_HERETIC: Mandatory to pass demos
+   if(vanilla_heretic)
+      target->flags3 &= ~MF3_PASSMOBJ;
 
    if(!(target->flags3 & MF3_DEADFLOAT))
       target->flags &= ~MF_NOGRAVITY;
@@ -1048,7 +1093,7 @@ static void P_DeathMessage(Mobj *source, Mobj *target, Mobj *inflictor,
                            emod_t *mod)
 {
    bool friendly = false;
-   const char *message = NULL;
+   const char *message = nullptr;
 
    if(!target->player || !obituaries)
       return;
@@ -1059,7 +1104,7 @@ static void P_DeathMessage(Mobj *source, Mobj *target, Mobj *inflictor,
    // miscellaneous death types that cannot be determined
    // directly from the source or inflictor without difficulty
 
-   if((source == NULL && inflictor == NULL) || mod->sourceless)
+   if((source == nullptr && inflictor == nullptr) || mod->sourceless)
       message = P_GetDeathMessageString(mod, false);
 
    if(source && !message)
@@ -1124,12 +1169,12 @@ static void P_DeathMessage(Mobj *source, Mobj *target, Mobj *inflictor,
 // Special damage type code -- see codepointer table below.
 //
 
-typedef struct dmgspecdata_s
+struct dmgspecdata_t
 {
    Mobj *source;
    Mobj *target;
    int     damage;
-} dmgspecdata_t;
+};
 
 //
 // Special damage action for Maulotaurs slamming into things.
@@ -1151,7 +1196,7 @@ static bool P_minotaurChargeHit(dmgspecdata_t *dmgspec)
       thrust = 16*FRACUNIT + (P_Random(pr_mincharge) << 10);
 
       P_ThrustMobj(target, angle, thrust);
-      P_DamageMobj(target, NULL, NULL,
+      P_DamageMobj(target, nullptr, nullptr,
                    ((P_Random(pr_mincharge) & 7) + 1) * 6,
                    MOD_UNKNOWN);
 
@@ -1195,7 +1240,7 @@ static bool P_touchWhirlwind(dmgspecdata_t *dmgspec)
 
    // do a small amount of damage (it adds up fast)
    if(!(leveltime & 7))
-      P_DamageMobj(target, NULL, NULL, 3, MOD_UNKNOWN);
+      P_DamageMobj(target, nullptr, nullptr, 3, MOD_UNKNOWN);
 
    return true; // always return from P_DamageMobj
 }
@@ -1223,7 +1268,7 @@ static bool P_touchPoweredMaceBall(dmgspecdata_t *dmgspec)
       if(chaosdevice)
       {
          const int itemid = chaosdevice->getInt("itemid", -1);
-         if(itemid != -1 && E_GetItemOwnedAmount(player, chaosdevice) > 1)
+         if(itemid != -1 && E_GetItemOwnedAmount(player, chaosdevice) >= 1)
          {
             E_TryUseItem(target->player, itemid);
             player->health = player->mo->health = (player->health + 1) / 2;
@@ -1231,7 +1276,7 @@ static bool P_touchPoweredMaceBall(dmgspecdata_t *dmgspec)
          }
       }
    }
-   P_DamageMobj(target, nullptr, nullptr, 10000, MOD_UNKNOWN);
+   P_DamageMobj(target, nullptr, nullptr, GOD_BREACH_DAMAGE, MOD_UNKNOWN);
    return true;
 }
 
@@ -1298,11 +1343,11 @@ static int P_AdjustDamageType(Mobj *source, Mobj *inflictor, int mod)
 //
 // Damages both enemies and players
 // "inflictor" is the thing that caused the damage
-//  creature or missile, can be NULL (slime, etc)
+//  creature or missile, can be nullptr (slime, etc)
 // "source" is the thing to target after taking damage
-//  creature or NULL
+//  creature or nullptr
 // Source and inflictor are the same for melee attacks.
-// Source can be NULL for slime, barrel explosions
+// Source can be nullptr for slime, barrel explosions
 // and other environmental stuff.
 //
 // haleyjd 07/13/03: added method of death flag
@@ -1327,7 +1372,7 @@ void P_DamageMobj(Mobj *target, Mobj *inflictor, Mobj *source,
    // Dormancy -- things are invulnerable until they are awakened
    // No Friend Damage -- some things aren't hurt by friends
    // Invuln-Charge -- skullflying objects won't take damage (for Maulotaur)
-   if(damage < 10000)
+   if(damage < GOD_BREACH_DAMAGE)
    {
       if(target->flags2 & (MF2_INVULNERABLE | MF2_DORMANT))
          return;
@@ -1406,7 +1451,6 @@ void P_DamageMobj(Mobj *target, Mobj *inflictor, Mobj *source,
 
       // SoM: restructured a bit
       fixed_t thrust = damage*(FRACUNIT>>3)*tf/target->info->mass;
-#ifdef R_LINKEDPORTALS
       unsigned ang;
 
       {
@@ -1422,10 +1466,6 @@ void P_DamageMobj(Mobj *target, Mobj *inflictor, Mobj *source,
                                   target->x + link->x, target->y + link->y);
          }
       }
-#else
-      unsigned ang = P_PointToAngle (inflictor->x, inflictor->y,
-                                      target->x, target->y);
-#endif
 
       // make fall forwards sometimes
       if(damage < 40 && damage > target->health
@@ -1451,11 +1491,11 @@ void P_DamageMobj(Mobj *target, Mobj *inflictor, Mobj *source,
    {
       // haleyjd 07/10/09: instagib
       if(source && dmflags & DM_INSTAGIB)
-         damage = 10000;
+         damage = GOD_BREACH_DAMAGE;
 
       // end of game hell hack
       // ioanch 20160116: portal aware
-      if(P_ExtremeSectorAtPoint(target, false)->damageflags & SDMG_EXITLEVEL &&
+      if(P_ExtremeSectorAtPoint(target, surf_floor)->damageflags & SDMG_EXITLEVEL &&
          damage >= target->health)
       {
          damage = target->health - 1;
@@ -1465,7 +1505,7 @@ void P_DamageMobj(Mobj *target, Mobj *inflictor, Mobj *source,
       // ignore damage in GOD mode, or with INVUL power.
       // killough 3/26/98: make god mode 100% god mode in non-compat mode
 
-      if((damage < 1000 || (!comp[comp_god] && player->cheats&CF_GODMODE)) &&
+      if((damage < 1000 || (!getComp(comp_god) && player->cheats&CF_GODMODE)) &&
          (player->cheats&CF_GODMODE || player->powers[pw_invulnerability]))
          return;
 
@@ -1503,7 +1543,7 @@ void P_DamageMobj(Mobj *target, Mobj *inflictor, Mobj *source,
    }
 
    // do the damage
-   if(!(target->flags4 & MF4_NODAMAGE) || damage >= 10000)
+   if(!(target->flags4 & MF4_NODAMAGE) || damage >= GOD_BREACH_DAMAGE)
       target->health -= damage;
 
    // check for death
@@ -1569,8 +1609,7 @@ void P_DamageMobj(Mobj *target, Mobj *inflictor, Mobj *source,
       }
    }
 
-   if(P_Random(pr_painchance) < target->info->painchance &&
-      !(target->flags & MF_SKULLFLY))
+   if(P_Random(pr_painchance) < target->info->painchance && !(target->flags & MF_SKULLFLY))
    {
       //killough 11/98: see below
       if(demo_version >= 203)
@@ -1579,7 +1618,7 @@ void P_DamageMobj(Mobj *target, Mobj *inflictor, Mobj *source,
          target->flags |= MF_JUSTHIT;    // fight back!
 
       statenum_t st = target->info->painstate;
-      state_t *state = NULL;
+      state_t *state = nullptr;
 
       // haleyjd  06/05/08: check for special damagetype painstate
       if(mod > 0 && (state = E_StateForMod(target->info, "Pain", emod)))
@@ -1757,7 +1796,7 @@ bool P_CheckCorpseRaiseSpace(Mobj *corpse)
 {
    corpse->momx = corpse->momy = 0;
    bool check;
-   if(comp[comp_vile])
+   if(getComp(comp_vile))
    {
       corpse->height <<= 2;
 
@@ -1809,7 +1848,7 @@ void P_RaiseCorpse(Mobj *corpse, const Mobj *raiser)
 
    P_SetMobjState(corpse, info->raisestate);
 
-   if(comp[comp_vile])
+   if(getComp(comp_vile))
       corpse->height <<= 2;                        // phares
    else                                               //   V
    {
@@ -1836,11 +1875,11 @@ void P_RaiseCorpse(Mobj *corpse, const Mobj *raiser)
    corpse->intflags &= ~MIF_CLEARRAISED;
 
    corpse->health = corpse->getModifiedSpawnHealth();
-   P_SetTarget<Mobj>(&corpse->target, NULL);  // killough 11/98
+   P_SetTarget<Mobj>(&corpse->target, nullptr);  // killough 11/98
 
    if(demo_version >= 203)
    {         // kilough 9/9/98
-      P_SetTarget<Mobj>(&corpse->lastenemy, NULL);
+      P_SetTarget<Mobj>(&corpse->lastenemy, nullptr);
       corpse->flags &= ~MF_JUSTHIT;
    }
 
@@ -1861,7 +1900,7 @@ void P_RaiseCorpse(Mobj *corpse, const Mobj *raiser)
 static cell AMX_NATIVE_CALL sm_thingkill(AMX *amx, cell *params)
 {
    SmallContext_t *context = SM_GetContextForAMX(amx);
-   Mobj *rover = NULL;
+   Mobj *rover = nullptr;
 
    if(gamestate != GS_LEVEL)
    {
@@ -1877,14 +1916,14 @@ static cell AMX_NATIVE_CALL sm_thingkill(AMX *amx, cell *params)
       switch(params[2])
       {
       case 1: // telefrag damage
-         damage = 10000;
+         damage = GOD_BREACH_DAMAGE;
          break;
       default: // damage for health
          damage = rover->health;
          break;
       }
 
-      P_DamageMobj(rover, NULL, NULL, damage, MOD_UNKNOWN);
+      P_DamageMobj(rover, nullptr, nullptr, damage, MOD_UNKNOWN);
    }
 
    return 0;
@@ -1898,9 +1937,9 @@ static cell AMX_NATIVE_CALL sm_thingkill(AMX *amx, cell *params)
 static cell AMX_NATIVE_CALL sm_thinghurt(AMX *amx, cell *params)
 {
    SmallContext_t *context = SM_GetContextForAMX(amx);
-   Mobj *rover = NULL;
-   Mobj *inflictor = NULL;
-   Mobj *source = NULL;
+   Mobj *rover = nullptr;
+   Mobj *inflictor = nullptr;
+   Mobj *source = nullptr;
 
    if(gamestate != GS_LEVEL)
    {
@@ -1936,7 +1975,7 @@ static cell AMX_NATIVE_CALL sm_thinghurt(AMX *amx, cell *params)
 static cell AMX_NATIVE_CALL sm_thinghate(AMX *amx, cell *params)
 {
    SmallContext_t *context = SM_GetContextForAMX(amx);
-   Mobj *obj = NULL, *targ = NULL;
+   Mobj *obj = nullptr, *targ = nullptr;
 
    if(gamestate != GS_LEVEL)
    {
@@ -1960,7 +1999,7 @@ AMX_NATIVE_INFO pinter_Natives[] =
    { "_ThingKill", sm_thingkill },
    { "_ThingHurt", sm_thinghurt },
    { "_ThingHate", sm_thinghate },
-   { NULL, NULL }
+   { nullptr, nullptr }
 };
 #endif
 

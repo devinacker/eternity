@@ -37,6 +37,7 @@
 #include "d_main.h"
 #include "d_mod.h"
 #include "doomstat.h"
+#include "e_compatibility.h"
 #include "e_exdata.h" // haleyjd: ExtraData!
 #include "e_reverbs.h"
 #include "e_ttypes.h"
@@ -50,6 +51,7 @@
 #include "m_argv.h"
 #include "m_bbox.h"
 #include "m_binary.h"
+#include "m_hash.h"
 #include "p_anim.h"  // haleyjd: lightning
 #include "p_chase.h"
 #include "p_enemy.h"
@@ -67,6 +69,7 @@
 #include "p_spec.h"
 #include "p_tick.h"
 #include "polyobj.h"
+#include "r_context.h"
 #include "r_data.h"
 #include "r_defs.h"
 #include "r_dynseg.h"
@@ -201,6 +204,9 @@ mapthing_t playerstarts[MAXPLAYERS];
 
 // haleyjd 06/14/10: level wad directory
 static WadDirectory *setupwad;
+
+// Current level's hash digest, for showing on console
+static qstring p_currentLevelHashDigest;
 
 //
 // ShortToLong
@@ -415,7 +421,7 @@ static void P_LoadSegs(int lump)
       if(ldef->flags & ML_TWOSIDED && ldef->sidenum[side^1]!=-1)
          li->backsector = sides[ldef->sidenum[side^1]].sector;
       else
-         li->backsector = NULL;
+         li->backsector = nullptr;
 
       P_CalcSegLength(li);
    }
@@ -487,7 +493,7 @@ static void P_LoadSegs_V4(int lump)
       if(ldef->flags & ML_TWOSIDED && ldef->sidenum[side^1]!=-1)
          li->backsector = sides[ldef->sidenum[side^1]].sector;
       else
-         li->backsector = NULL;
+         li->backsector = nullptr;
 
       P_CalcSegLength(li);
    }
@@ -568,11 +574,11 @@ void P_InitSector(sector_t *ss)
 
    // killough 3/7/98:
    ss->heightsec     = -1;   // sector used to get floor and ceiling height
-   ss->floorlightsec = -1;   // sector used to get floor lighting
+   ss->srf.floor.lightsec = -1;   // sector used to get floor lighting
    // killough 3/7/98: end changes
 
    // killough 4/11/98 sector used to get ceiling lighting:
-   ss->ceilinglightsec = -1;
+   ss->srf.ceiling.lightsec = -1;
 
    // killough 4/4/98: colormaps:
    // haleyjd 03/04/07: modifications for per-sector colormap logic
@@ -594,27 +600,25 @@ void P_InitSector(sector_t *ss)
    //   ((ss->intflags & SIF_SKY) ? global_fog_index : global_cmap_index);
 
    // SoM 9/19/02: Initialize the attached sector list for 3dsides
-   ss->c_attached = ss->f_attached = nullptr;
+   ss->srf.ceiling.attached = ss->srf.floor.attached = nullptr;
    // SoM 11/9/04: 
-   ss->c_attsectors = ss->f_attsectors = nullptr;
+   ss->srf.ceiling.attsectors = ss->srf.floor.attsectors = nullptr;
 
    // SoM 10/14/07:
-   ss->c_asurfaces = ss->f_asurfaces = nullptr;
+   ss->srf.ceiling.asurfaces = ss->srf.floor.asurfaces = nullptr;
 
    // SoM: init portals
-   ss->c_pflags = ss->f_pflags = 0;
-   ss->c_portal = ss->f_portal = nullptr;
+   ss->srf.ceiling.pflags = ss->srf.floor.pflags = 0;
+   ss->srf.ceiling.portal = ss->srf.floor.portal = nullptr;
    ss->groupid = R_NOGROUP;
 
    // SoM: These are kept current with floorheight and ceilingheight now
-   ss->floorheightf   = M_FixedToFloat(ss->floorheight);
-   ss->ceilingheightf = M_FixedToFloat(ss->ceilingheight);
+   ss->srf.floor.heightf = M_FixedToFloat(ss->srf.floor.height);
+   ss->srf.ceiling.heightf = M_FixedToFloat(ss->srf.ceiling.height);
 
    // needs to be defaulted as it starts as nonzero
-   ss->floor_xscale = 1.0;
-   ss->floor_yscale = 1.0;
-   ss->ceiling_xscale = 1.0;
-   ss->ceiling_yscale = 1.0;
+   ss->srf.floor.scale = { 1.0f, 1.0f };
+   ss->srf.ceiling.scale = { 1.0f, 1.0f };
 
    // haleyjd 09/24/06: sound sequences -- set default
    ss->sndSeqID = defaultSndSeq;
@@ -653,10 +657,10 @@ static void P_LoadPSXSectors(int lumpnum)
    {
       sector_t *ss = sectors + i;
 
-      ss->floorheight        = GetBinaryWord(data) << FRACBITS;
-      ss->ceilingheight      = GetBinaryWord(data) << FRACBITS;
+      ss->srf.floor.height = GetBinaryWord(data) << FRACBITS;
+      ss->srf.ceiling.height = GetBinaryWord(data) << FRACBITS;
       GetBinaryString(data, namebuf, 8);
-      ss->floorpic           = R_FindFlat(namebuf);
+      ss->srf.floor.pic = R_FindFlat(namebuf);
       GetBinaryString(data, namebuf, 8);
       P_SetSectorCeilingPic(ss, R_FindFlat(namebuf));
       ss->lightlevel         = *data++;
@@ -695,10 +699,10 @@ static void P_LoadSectors(int lumpnum)
    {
       sector_t *ss = sectors + i;
 
-      ss->floorheight        = GetBinaryWord(data) << FRACBITS;
-      ss->ceilingheight      = GetBinaryWord(data) << FRACBITS;
+      ss->srf.floor.height = GetBinaryWord(data) << FRACBITS;
+      ss->srf.ceiling.height = GetBinaryWord(data) << FRACBITS;
       GetBinaryString(data, namebuf, 8);
-      ss->floorpic           = R_FindFlat(namebuf);
+      ss->srf.floor.pic = R_FindFlat(namebuf);
       // haleyjd 08/30/09: set ceiling pic using function
       GetBinaryString(data, namebuf, 8);
       P_SetSectorCeilingPic(ss, R_FindFlat(namebuf));
@@ -721,10 +725,10 @@ static void P_CreateSectorInterps()
 
    for(int i = 0; i < numsectors; i++)
    {
-      sectorinterps[i].prevfloorheight    = sectors[i].floorheight;
-      sectorinterps[i].prevceilingheight  = sectors[i].ceilingheight;
-      sectorinterps[i].prevfloorheightf   = sectors[i].floorheightf;
-      sectorinterps[i].prevceilingheightf = sectors[i].ceilingheightf;
+      sectorinterps[i].prevfloorheight    = sectors[i].srf.floor.height;
+      sectorinterps[i].prevceilingheight  = sectors[i].srf.ceiling.height;
+      sectorinterps[i].prevfloorheightf   = sectors[i].srf.floor.heightf;
+      sectorinterps[i].prevceilingheightf = sectors[i].srf.ceiling.heightf;
    }
 }
 
@@ -739,12 +743,16 @@ static void P_createSectorBoundingBoxes()
    {
       const sector_t &sector = sectors[i];
       fixed_t *box = pSectorBoxes[i].box;
+      float *fbox = pSectorBoxes[i].fbox;
       M_ClearBox(box);
+      M_ClearBox(fbox);
       for(int j = 0; j < sector.linecount; ++j)
       {
          const line_t &line = *sector.lines[j];
          M_AddToBox(box, line.v1->x, line.v1->y);
          M_AddToBox(box, line.v2->x, line.v2->y);
+         M_AddToBox2(fbox, line.v1->fx, line.v1->fy);
+         M_AddToBox2(fbox, line.v2->fx, line.v2->fy);
       }
    }
 }
@@ -825,16 +833,16 @@ static void P_CalcNodeCoefficients(node_t *node, fnode_t *fnode)
 {
    // haleyjd 05/16/08: keep floating point versions as well for dynamic
    // seg splitting operations
-   fnode->fx  = (double)node->x;
-   fnode->fy  = (double)node->y;
-   fnode->fdx = (double)node->dx;
-   fnode->fdy = (double)node->dy;
+   double fx = (double)node->x;
+   double fy = (double)node->y;
+   double fdx = (double)node->dx;
+   double fdy = (double)node->dy;
 
    // haleyjd 05/20/08: precalculate general line equation coefficients
-   fnode->a   = -fnode->fdy;
-   fnode->b   =  fnode->fdx;
-   fnode->c   =  fnode->fdy * fnode->fx - fnode->fdx * fnode->fy;
-   fnode->len = sqrt(fnode->fdx * fnode->fdx + fnode->fdy * fnode->fdy);
+   fnode->a = -fdy;
+   fnode->b = fdx;
+   fnode->c = fdy * fx - fdx * fy;
+   fnode->len = sqrt(fdx * fdx + fdy * fdy);
 }
 
 //
@@ -844,16 +852,16 @@ static void P_CalcNodeCoefficients(node_t *node, fnode_t *fnode)
 //
 static void P_CalcNodeCoefficients2(const node_t &node, fnode_t &fnode)
 {
-   fnode.fx = M_FixedToDouble(node.x);
-   fnode.fy = M_FixedToDouble(node.y);
-   fnode.fdx = M_FixedToDouble(node.dx);
-   fnode.fdy = M_FixedToDouble(node.dy);
+   double fx = M_FixedToDouble(node.x);
+   double fy = M_FixedToDouble(node.y);
+   double fdx = M_FixedToDouble(node.dx);
+   double fdy = M_FixedToDouble(node.dy);
    
    // IOANCH: same as code above
-   fnode.a   = -fnode.fdy;
-   fnode.b   =  fnode.fdx;
-   fnode.c   =  fnode.fdy * fnode.fx - fnode.fdx * fnode.fy;
-   fnode.len = sqrt(fnode.fdx * fnode.fdx + fnode.fdy * fnode.fdy);
+   fnode.a = -fdy;
+   fnode.b = fdx;
+   fnode.c = fdy * fx - fdx * fy;
+   fnode.len = sqrt(fdx * fdx + fdy * fdy);
 }
 
 //
@@ -878,8 +886,8 @@ static void P_LoadNodes(int lump)
          level_error = "no nodes in level";
       else
          C_Printf("trivial map (no nodes, one subsector)\n");
-      nodes  = NULL;
-      fnodes = NULL;
+      nodes  = nullptr;
+      fnodes = nullptr;
       return;
    }
 
@@ -1086,7 +1094,7 @@ static void CheckZNodesOverflowFN(int *size, int count)
 }
 
 // IOANCH 20151217: updated for XGLN and XGL2
-typedef struct mapseg_znod_s
+struct mapseg_znod_t
 {
    uint32_t v1;
    union // IOANCH
@@ -1096,10 +1104,10 @@ typedef struct mapseg_znod_s
    };
    uint32_t linedef; // IOANCH: use 32-bit instead of 16-bit   
    byte     side;
-} mapseg_znod_t;
+};
 
 // IOANCH: modified to support XGL3 nodes
-typedef struct mapnode_znod_s
+struct mapnode_znod_t
 {
   union
   {
@@ -1122,7 +1130,7 @@ typedef struct mapnode_znod_s
   int16_t bbox[2][4];
   // If NF_SUBSECTOR its a subsector, else it's a node of another subtree.
   int32_t children[2];
-} mapnode_znod_t;
+};
 
 //
 // R_DynaSegOffset
@@ -1162,7 +1170,7 @@ static void P_LoadZSegs(byte *data, ZNodeType signature)
    for(i = 0; i < numsegs; i++, ++actualSegIndex)
    {
       line_t *ldef;
-      uint32_t v1, v2;
+      uint32_t v1, v2 = 0;
       uint32_t linedef;
       byte side;
       seg_t *li = segs+actualSegIndex;
@@ -1235,7 +1243,7 @@ static void P_LoadZSegs(byte *data, ZNodeType signature)
       if(ldef->flags & ML_TWOSIDED && ldef->sidenum[side^1] != -1)
          li->backsector = sides[ldef->sidenum[side^1]].sector;
       else
-         li->backsector = NULL;
+         li->backsector = nullptr;
 
       li->v1 = &vertexes[v1];
       if(signature == ZNodeType_Normal)
@@ -1294,7 +1302,7 @@ static void P_LoadZNodes(int lump, ZNodeType signature)
    uint32_t numSubs, currSeg;
    uint32_t numSegs;
    uint32_t numNodes;
-   vertex_t *newvertarray = NULL;
+   vertex_t *newvertarray = nullptr;
 
    data = lumpptr = (byte *)(setupwad->cacheLumpNum(lump, PU_STATIC));
    len  = setupwad->lumpLength(lump);
@@ -1944,7 +1952,7 @@ static void P_LoadLineDefs2()
 
       // haleyjd 03/13/05: removed redundant -1 check for first side
       ld->frontsector = sides[ld->sidenum[0]].sector;
-      ld->backsector  = ld->sidenum[1] != -1 ? sides[ld->sidenum[1]].sector : 0;
+      ld->backsector  = ld->sidenum[1] != -1 ? sides[ld->sidenum[1]].sector : nullptr;
       
       // haleyjd 02/06/13: lookup static init
       int staticFn = EV_StaticInitForSpecial(ld->special);
@@ -2106,7 +2114,7 @@ static void P_LoadSideDefs2(int lumpnum)
 }
 
 // haleyjd 10/10/11: externalized structure due to pre-C++11 template limitations
-typedef struct bmap_s { int n, nalloc, *list; } bmap_t; // blocklist structure
+struct bmap_t { int n, nalloc, *list; }; // blocklist structure
 
 //
 // Boom variant of blockmap creation, which will fix PrBoom+ demos recorded with -complevel 9. Not
@@ -2437,7 +2445,15 @@ static void P_CreateBlockMap()
       return P_createBlockMapBoom();   // use Boom mode (which is also in PrBoom+)
 
    // First find limits of map
-   
+
+   // This fixes MBF's code, which has a bug where maxx/maxy
+   // are wrong if the 0th node has the largest x or y
+   if(demo_version > 401 && numvertexes)
+   {
+      minx = maxx = vertexes->x >> FRACBITS;
+      miny = maxy = vertexes->y >> FRACBITS;
+   }
+
    for(i = 0; i < (unsigned int)numvertexes; i++)
    {
       if((vertexes[i].x >> FRACBITS) < minx)
@@ -2566,8 +2582,7 @@ static void P_CreateBlockMap()
          }
 
          // Allocate blockmap lump with computed count
-         blockmaplump = (int *)(Z_Malloc(sizeof(*blockmaplump) * count, 
-                                         PU_LEVEL, 0));
+         blockmaplump = emalloctag(int *, sizeof(*blockmaplump) * count,  PU_LEVEL, nullptr);
       }
 
       // Now compress the blockmap.
@@ -2613,7 +2628,7 @@ static bool P_VerifyBlockMap(int count)
    int x, y;
    int *maxoffs = blockmaplump + count;
 
-   bmaperrormsg = NULL;
+   bmaperrormsg = nullptr;
 
    skipblstart = true;
 
@@ -2705,8 +2720,7 @@ static void P_LoadBlockMap(int lump)
    {
       int i;
       int16_t *wadblockmaplump = (int16_t *)(setupwad->cacheLumpNum(lump, PU_LEVEL));
-      blockmaplump = (int *)(Z_Malloc(sizeof(*blockmaplump) * count,
-                                      PU_LEVEL, NULL));
+      blockmaplump = emalloctag(int *, sizeof(*blockmaplump) * count, PU_LEVEL, nullptr);
 
       // killough 3/1/98: Expand wad blockmap into larger internal one,
       // by treating all offsets except -1 as unsigned and zero-extending
@@ -2736,23 +2750,23 @@ static void P_LoadBlockMap(int lump)
       {
          C_Printf(FC_ERROR "Blockmap error: %s\a\n", bmaperrormsg);
          Z_Free(blockmaplump);
-         blockmaplump = NULL;
+         blockmaplump = nullptr;
          P_CreateBlockMap();
       }
    }
 
    // clear out mobj chains
    count      = sizeof(*blocklinks) * bmapwidth * bmapheight;
-   blocklinks = ecalloctag(Mobj **, 1, count, PU_LEVEL, NULL);
+   blocklinks = ecalloctag(Mobj **, 1, count, PU_LEVEL, nullptr);
    blockmap   = blockmaplump + 4;
 
    // haleyjd 2/22/06: setup polyobject blockmap
    count = sizeof(*polyblocklinks) * bmapwidth * bmapheight;
-   polyblocklinks = ecalloctag(DLListItem<polymaplink_t> **, 1, count, PU_LEVEL, NULL);
+   polyblocklinks = ecalloctag(DLListItem<polymaplink_t> **, 1, count, PU_LEVEL, nullptr);
 
    // haleyjd 05/17/13: setup portalmap
    count = sizeof(*portalmap) * bmapwidth * bmapheight;
-   portalmap = ecalloctag(byte *, 1, count, PU_LEVEL, NULL);
+   portalmap = ecalloctag(byte *, 1, count, PU_LEVEL, nullptr);
 }
 
 
@@ -2808,7 +2822,7 @@ static void P_GroupLines()
    gTotalLinesForRejectOverflow = total;
 
    // build line tables for each sector
-   linebuffer = (line_t **)(Z_Malloc(total * sizeof(*linebuffer), PU_LEVEL, 0));
+   linebuffer = emalloctag(line_t **, total * sizeof(*linebuffer), PU_LEVEL, nullptr);
 
    for(i = 0; i < numsectors; i++)
    {
@@ -3059,7 +3073,7 @@ static void P_LoadReject(int lump)
    else
    {
       // set to all zeroes so that the reject has no effect
-      rejectmatrix = (byte *)(Z_Calloc(1, expectedsize, PU_LEVEL, NULL));
+      rejectmatrix = ecalloctag(byte *, 1, expectedsize, PU_LEVEL, nullptr);
 
       // Pad remaining space with 0xff if specified on command line)
       if(M_CheckParm("-reject_pad_with_ff"))
@@ -3297,10 +3311,10 @@ static void P_ClearPlayerVars()
       memset(players[i].frags, 0, sizeof(players[i].frags));
 
       // haleyjd: explicitly nullify old player object pointers
-      players[i].mo = NULL;
+      players[i].mo = nullptr;
 
       // haleyjd: explicitly nullify old player attacker
-      players[i].attacker = NULL;
+      players[i].attacker = nullptr;
    }
 
    totalkills = totalitems = totalsecret = wminfo.maxfrags = 0;
@@ -3441,7 +3455,7 @@ static void P_DeathMatchSpawnPlayers()
       {
          if(playeringame[i])
          {
-            players[i].mo = NULL;
+            players[i].mo = nullptr;
             G_DeathMatchSpawnPlayer(i);
          }
       }
@@ -3471,6 +3485,67 @@ void P_InitThingLists()
 
    // haleyjd 06/06/06: initialize environmental sequences
    S_InitEnviroSpots();
+}
+
+//
+// Computes the compatibility hash. Use the same content as in GZDoom:
+// github.com/coelckers/gzdoom: src/p_openmap.cpp#MapData::GetChecksum
+//
+static void P_resolveCompatibilities(const WadDirectory &dir, int lumpnum, bool isUdmf,
+                                     int behaviorIndex)
+{
+   p_currentLevelHashDigest.clear();
+   E_RestoreCompatibilities();
+   HashData md5(HashData::MD5);
+   ZAutoBuffer buf;
+
+   if(isUdmf)
+   {
+      dir.cacheLumpAuto(lumpnum + 1, buf); // TEXTMAP
+      md5.addData(buf.getAs<const uint8_t *>(), static_cast<uint32_t>(buf.getSize()));
+   }
+   else
+   {
+
+      dir.cacheLumpAuto(lumpnum, buf); // level marker
+      md5.addData(buf.getAs<const uint8_t*>(), static_cast<uint32_t>(buf.getSize()));
+
+      dir.cacheLumpAuto(lumpnum + ML_THINGS, buf);
+      md5.addData(buf.getAs<const uint8_t*>(), static_cast<uint32_t>(buf.getSize()));
+
+      dir.cacheLumpAuto(lumpnum + ML_LINEDEFS, buf);
+      md5.addData(buf.getAs<const uint8_t*>(), static_cast<uint32_t>(buf.getSize()));
+
+      dir.cacheLumpAuto(lumpnum + ML_SIDEDEFS, buf);
+      md5.addData(buf.getAs<const uint8_t*>(), static_cast<uint32_t>(buf.getSize()));
+
+      dir.cacheLumpAuto(lumpnum + ML_SECTORS, buf);
+      md5.addData(buf.getAs<const uint8_t*>(), static_cast<uint32_t>(buf.getSize()));
+   }
+
+   if(behaviorIndex != -1)
+   {
+      dir.cacheLumpAuto(behaviorIndex, buf);
+      md5.addData(buf.getAs<const uint8_t*>(), static_cast<uint32_t>(buf.getSize()));
+   }
+
+   md5.wrapUp();
+
+   char *digest = md5.digestToString();
+   E_ApplyCompatibility(digest);
+   p_currentLevelHashDigest = digest;
+   efree(digest);
+}
+
+//
+// Console command to get the currently obtained MD5 checksum (if available)
+//
+CONSOLE_COMMAND(mapchecksum, 0)
+{
+   if(p_currentLevelHashDigest.empty())
+      C_Puts("Current map MD5 checksum not available.");
+   else
+      C_Printf("Current map MD5: %s\n", p_currentLevelHashDigest.constPtr());
 }
 
 //
@@ -3530,10 +3605,18 @@ void P_SetupLevel(WadDirectory *dir, const char *mapname, int playermask,
       return;
    }
 
-   if(isUdmf)
+   P_resolveCompatibilities(*setupwad, lumpnum, isUdmf, mgla.behavior);
+
+   if(isUdmf || demo_version >= 401)
+   {
       P_PointOnLineSide = P_PointOnLineSidePrecise;
+      P_PointOnDivlineSide = P_PointOnDivlineSidePrecise;
+   }
    else
+   {
       P_PointOnLineSide = P_PointOnLineSideClassic;
+      P_PointOnDivlineSide = P_PointOnDivlineSideClassic;
+   }
 
    // haleyjd 07/22/04: moved up
    newlevel   = (lumpinfo[lumpnum]->source != WadDirectory::IWADSource);
@@ -3556,7 +3639,7 @@ void P_SetupLevel(WadDirectory *dir, const char *mapname, int playermask,
    // killough 4/4/98: split load of sidedefs into two parts,
    // to allow texture names to be used in special linedefs
 
-   level_error = NULL; // reset
+   level_error = nullptr; // reset
 
    ScrollThinker::RemoveAllScrollers();
 
@@ -3773,7 +3856,9 @@ void P_SetupLevel(WadDirectory *dir, const char *mapname, int playermask,
    else if(camera == &walkcamera)
       P_ResetWalkcam();
    else
-      camera = NULL;        // camera off
+      camera = nullptr;        // camera off
+
+   R_RefreshContexts();
 
    // haleyjd 01/07/07: initialize ACS for Hexen maps
    //         03/19/11: also allow for DOOM-format maps via MapInfo

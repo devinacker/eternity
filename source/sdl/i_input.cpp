@@ -19,7 +19,11 @@
 // Authors: James Haley, Max Waine
 //
 
+#ifdef __APPLE__
+#include "SDL2/SDL.h"
+#else
 #include "SDL.h"
+#endif
 
 // HAL modules
 #include "../hal/i_platform.h"
@@ -564,7 +568,7 @@ static void I_GetEvent(SDL_Window *window)
             const char currchar = ev.text.text[i];
             if(ectype::isPrint(currchar))
             {
-               event_t textevent = { ev_text, currchar, 0, 0, !!ev.key.repeat };
+               const event_t textevent = { ev_text, currchar, 0, 0, false };
                D_PostEvent(&textevent);
             }
          }

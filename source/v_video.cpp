@@ -164,11 +164,11 @@ int usegamma;
 // provided in v_video.h.
 //
 
-typedef struct crdef_s
+struct crdef_t
 {
   const char *name;
   byte **map1, **map2;
-} crdef_t;
+};
 
 // killough 5/2/98: table-driven approach
 static const crdef_t crdefs[] = 
@@ -184,7 +184,7 @@ static const crdef_t crdefs[] =
    { "CRORANGE", &cr_orange,  &colrngs[CR_ORANGE] },
    { "CRYELLOW", &cr_yellow,  &colrngs[CR_YELLOW] },
    { "CRBLUE2",  &cr_blue_status, &cr_blue_status },
-   { NULL }
+   { nullptr }
 };
 
 // killough 5/2/98: tiny engine driven by table above
@@ -205,7 +205,7 @@ void V_InitColorTranslation()
 // haleyjd 05/04/10: clippable and scalable rect structure.
 // TODO: make available to v_block.c
 //
-typedef struct vrect_s
+struct vrect_t
 {
    int x;   // original x coordinate for upper left corner
    int y;   // original y coordinate for upper left corner
@@ -223,7 +223,7 @@ typedef struct vrect_s
    int sy;  // scaled y
    int sw;  // scaled width
    int sh;  // scaled height
-} vrect_t;
+};
 
 //
 // V_clipRect
@@ -369,21 +369,19 @@ void V_CopyRect(int srcx, int srcy, VBuffer *src, int width,
    // block copy
    if(src->pitch == dest->pitch && usew == src->width && usew == dest->width)
    {
-      memcpy(dstp, srcp, src->pitch * useh);
+      memcpy(dstp, srcp, src->pitch * usew);
    }
    else
    {
-      while(useh--)
+      while(usew--)
       {
-         memcpy(dstp, srcp, usew);
+         memcpy(dstp, srcp, useh);
          srcp += src->pitch;
          dstp += dest->pitch;
       }
    }
 }
 
-//
-// V_DrawPatch
 //
 // Masks a column based masked pic to the screen.
 //
@@ -405,6 +403,7 @@ void V_DrawPatchGeneral(int x, int y, VBuffer *buffer, patch_t *patch,
 			            bool flipped)
 {
    PatchInfo pi;
+   cb_patch_column_t patchcol = {};
 
    pi.x = x;
    pi.y = y;
@@ -412,11 +411,9 @@ void V_DrawPatchGeneral(int x, int y, VBuffer *buffer, patch_t *patch,
    pi.flipped = flipped;
    pi.drawstyle = PSTYLE_NORMAL;
 
-   V_DrawPatchInt(&pi, buffer);
+   V_DrawPatchInt(patchcol, &pi, buffer);
 }
 
-//
-// V_DrawPatchTranslated
 //
 // Masks a column based masked pic to the screen.
 // Also translates colors from one palette range to another using
@@ -432,7 +429,8 @@ void V_DrawPatchTranslated(int x, int y, VBuffer *buffer, patch_t *patch,
                            byte *outr, bool flipped)
 {
    PatchInfo pi;
-   
+   cb_patch_column_t patchcol = {};
+
    pi.x = x;
    pi.y = y;
    pi.patch = patch;
@@ -442,16 +440,14 @@ void V_DrawPatchTranslated(int x, int y, VBuffer *buffer, patch_t *patch,
    if(outr)
    {
       pi.drawstyle = PSTYLE_TLATED;   
-      V_SetPatchColrng(outr);
+      patchcol.translation = outr;
    }
    else
       pi.drawstyle = PSTYLE_NORMAL;
 
-   V_DrawPatchInt(&pi, buffer);
+   V_DrawPatchInt(patchcol, &pi, buffer);
 }
 
-//
-// V_DrawPatchTranslatedLit
 //
 // haleyjd 01/22/12: Translated patch drawer that also supports a secondary
 // lighting remapping.
@@ -460,7 +456,8 @@ void V_DrawPatchTranslatedLit(int x, int y, VBuffer *buffer, patch_t *patch,
                               byte *outr, byte *lighttable, bool flipped)
 {
    PatchInfo pi;
-   
+   cb_patch_column_t patchcol = {};
+
    pi.x = x;
    pi.y = y;
    pi.patch = patch;
@@ -472,30 +469,28 @@ void V_DrawPatchTranslatedLit(int x, int y, VBuffer *buffer, patch_t *patch,
       if(lighttable) // is it really lit?
       {
          pi.drawstyle = PSTYLE_TLATEDLIT;
-         V_SetPatchLight(lighttable);
+         patchcol.light = lighttable;
       }
       else
       {
          pi.drawstyle = PSTYLE_TLATED;   
       }
-      V_SetPatchColrng(outr);
+      patchcol.translation = outr;
    }
    else if(lighttable)
    {
       // still treat as translated; just use the lighttable
       pi.drawstyle = PSTYLE_TLATED;
-      V_SetPatchColrng(lighttable);
+      patchcol.translation = lighttable;
    }
    else
       pi.drawstyle = PSTYLE_NORMAL;
 
-   V_DrawPatchInt(&pi, buffer);
+   V_DrawPatchInt(patchcol, &pi, buffer);
 }
 
 
 
-//
-// V_DrawPatchTL
 //
 // Masks a column based masked pic to the screen with translucency.
 // Also translates colors from one palette range to another using
@@ -507,6 +502,7 @@ void V_DrawPatchTL(int x, int y, VBuffer *buffer, patch_t *patch,
                    byte *outr, int tl)
 {
    PatchInfo pi;
+   cb_patch_column_t patchcol = {};
 
    // is invisible?
    if(tl == 0)
@@ -528,7 +524,7 @@ void V_DrawPatchTL(int x, int y, VBuffer *buffer, patch_t *patch,
    if(outr)
    {
       pi.drawstyle = PSTYLE_TLTRANSLUC;
-      V_SetPatchColrng(outr);
+      patchcol.translation = outr;
    }
    else
       pi.drawstyle = PSTYLE_TRANSLUC;
@@ -538,14 +534,13 @@ void V_DrawPatchTL(int x, int y, VBuffer *buffer, patch_t *patch,
       unsigned int fglevel, bglevel;
       fglevel = tl & ~0x3ff;
       bglevel = FRACUNIT - fglevel;
-      V_SetPatchTL(Col2RGB8[fglevel >> 10], Col2RGB8[bglevel >> 10]);
+      patchcol.fg2rgb = Col2RGB8[fglevel >> 10];
+      patchcol.bg2rgb = Col2RGB8[bglevel >> 10];
    }
 
-   V_DrawPatchInt(&pi, buffer);
+   V_DrawPatchInt(patchcol, &pi, buffer);
 }
 
-//
-// V_DrawPatchAdd
 //
 // Masks a column based masked pic to the screen with additive
 // translucency and optional color translation.
@@ -556,6 +551,7 @@ void V_DrawPatchAdd(int x, int y, VBuffer *buffer, patch_t *patch,
                     byte *outr, int tl)
 {
    PatchInfo pi;
+   cb_patch_column_t patchcol = {};
 
    // if translucency is off, fall back to translated
    if(!general_translucency)
@@ -573,7 +569,7 @@ void V_DrawPatchAdd(int x, int y, VBuffer *buffer, patch_t *patch,
    if(outr)
    {
       pi.drawstyle = PSTYLE_TLADD;
-      V_SetPatchColrng(outr);
+      patchcol.translation = outr;
    }
    else
       pi.drawstyle = PSTYLE_ADD;
@@ -583,11 +579,11 @@ void V_DrawPatchAdd(int x, int y, VBuffer *buffer, patch_t *patch,
       unsigned int fglevel, bglevel;
       fglevel = tl & ~0x3ff;    // normal foreground level
       bglevel = FRACUNIT;       // full background level
-      V_SetPatchTL(Col2RGB8_LessPrecision[fglevel >> 10], 
-                   Col2RGB8_LessPrecision[bglevel >> 10]);
+      patchcol.fg2rgb = Col2RGB8_LessPrecision[fglevel >> 10];
+      patchcol.bg2rgb = Col2RGB8_LessPrecision[bglevel >> 10];
    }
 
-   V_DrawPatchInt(&pi, buffer);
+   V_DrawPatchInt(patchcol, &pi, buffer);
 }
 
 // blackmap is used by V_DrawPatchShadowed; see below.
@@ -687,8 +683,8 @@ void V_DrawPatchFS(VBuffer *buffer, patch_t *patch)
 //
 void V_DrawFSBackground(VBuffer *dest, int lumpnum)
 {
-   void    *source = NULL;
-   patch_t *patch  = NULL;
+   void    *source = nullptr;
+   patch_t *patch  = nullptr;
 
    if(lumpnum < 0)
       return;
@@ -781,10 +777,10 @@ static unsigned int Col2RGB8_2[63][256];
 
 #define MAKECOLOR(a) (((a)<<3)|((a)>>2))
 
-typedef struct tpalcol_s
+struct tpalcol_t
 {
    unsigned int r, g, b;
-} tpalcol_t;
+};
 
 void V_InitFlexTranTable(const byte *palette)
 {
@@ -795,7 +791,7 @@ void V_InitFlexTranTable(const byte *palette)
    // mark that we've initialized the flex tran table
    flexTranInit = true;
    
-   tempRGBpal = (tpalcol_t *)(Z_Malloc(256*sizeof(*tempRGBpal), PU_STATIC, NULL));
+   tempRGBpal = emalloctag(tpalcol_t *, 256*sizeof(*tempRGBpal), PU_STATIC, nullptr);
    
    for(i = 0, palRover = palette; i < 256; i++, palRover += 3)
    {

@@ -228,6 +228,12 @@ enum
    // Weapon frame X offset must be nonzero for both XY offsets to be enabled. Needed for DeHackEd
    // compatibility.
    GIF_DOOMWEAPONOFFSET = 0x00400000,
+   GIF_INVALWAYSOPEN  = 0x00800000, // Inventory is always open (like Strife, but not Heretic)
+
+   // TODO: make this public for EDF gameprops (in a good public form)
+   GIF_FLIGHTINERTIA  = 0x01000000, // player flight retains some inertia
+   // TODO: make this public for EDF gameprops (in a good public form)
+   GIF_WPNSWITCHSUPER = 0x02000000, // only switch to superior weapon when picking up
 };
 
 // Game mode handling - identify IWAD version
@@ -318,21 +324,21 @@ struct missioninfo_t
 
    unsigned int addGMIFlags;        // flags to add to the base GameModeInfo->flags
    unsigned int remGMIFlags;        // flags to remove from base GameModeInfo->flags
-   const char *versionNameOR;       // if not NULL, overrides name of the gamemode
-   const char *startupBannerOR;     // if not NULL, overrides the startup banner 
-   int numEpisodesOR;               // if not    0, overrides number of episodes
-   char **iwadPathOR;               // if not NULL, overrides iwadPath
-   finaledata_t *finaleDataOR;      // if not NULL, overrides finaleData
-   const char *menuBackgroundOR;    // if not NULL, overrides menuBackground
-   const char *creditBackgroundOR;  // if not NULL, overrides creditBackground
-   const demostate_t *demoStatesOR; // if not NULL, overrides demostates
-   const char *interPicOR;          // if not NULL, overrides interPic
-   exitrule_t *exitRulesOR;         // if not NULL, overrides exitRules
-   const char **levelNamesOR;       // if not NULL, overrides levelNames
-   int randMusMaxOR;                // if not    0, overrides randMusMax
-   skydata_t *skyDataOR;            // if not NULL, overrides skyData
-   skyflat_t *skyFlatsOR;           // if not NULL, overrides skyFlats
-   giscale_t *pspriteGlobalScaleOR; // if not NULL, overrides pspriteGlobalScale
+   const char *versionNameOR;       // if not nullptr, overrides name of the gamemode
+   const char *startupBannerOR;     // if not nullptr, overrides the startup banner 
+   int numEpisodesOR;               // if not       0, overrides number of episodes
+   char **iwadPathOR;               // if not nullptr, overrides iwadPath
+   finaledata_t *finaleDataOR;      // if not nullptr, overrides finaleData
+   const char *menuBackgroundOR;    // if not nullptr, overrides menuBackground
+   const char *creditBackgroundOR;  // if not nullptr, overrides creditBackground
+   const demostate_t *demoStatesOR; // if not nullptr, overrides demostates
+   const char *interPicOR;          // if not nullptr, overrides interPic
+   exitrule_t *exitRulesOR;         // if not nullptr, overrides exitRules
+   const char **levelNamesOR;       // if not nullptr, overrides levelNames
+   int randMusMaxOR;                // if not       0, overrides randMusMax
+   skydata_t *skyDataOR;            // if not nullptr, overrides skyData
+   skyflat_t *skyFlatsOR;           // if not nullptr, overrides skyFlats
+   giscale_t *pspriteGlobalScaleOR; // if not nullptr, overrides pspriteGlobalScale
 };
 
 // function pointer types
@@ -443,6 +449,7 @@ struct gamemodeinfo_t
    double skillAmmoMultiplier;     // how much more ammo to give on baby and nightmare
    meleecalc_e monsterMeleeRange;  // how monster melee range is calculated
    fixed_t itemHeight;             // item pick-up height (independent of thing height)
+   const char *autoFlightArtifact; // name of artifact to trigger when commanding to fly
 
    // Intermission and Finale stuff
    const char *interPic;          // default intermission backdrop
@@ -470,6 +477,8 @@ struct gamemodeinfo_t
    const char **skinSounds;       // default skin sound mnemonics array
    int *playerSounds;             // player sound dehnum indirection
    const char *titleMusName;      // [XA] title music override, for EDF
+   const char *secretSoundName;   // name of the secret lump (DSSECRET for non-Strife games)
+   int         defSecretSound;    // dehnum of default secret sound
 
    // Renderer stuff
    int switchEpisode;             // "episode" number for switch texture defs

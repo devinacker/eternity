@@ -97,7 +97,7 @@ void A_CheckPlayerDone(actionargs_t *actionargs)
 void A_ClearSkin(actionargs_t *actionargs)
 {
    Mobj *mo   = actionargs->actor;
-   mo->skin   = NULL;
+   mo->skin   = nullptr;
    mo->sprite = mo->state->sprite;
 }
 
@@ -261,13 +261,8 @@ void A_JumpIfTargetInLOS(actionargs_t *actionargs)
       if(ffov)
       {
          angle_t fov  = FixedToAngle(ffov);
-         angle_t tang = P_PointToAngle(actor->x, actor->y,
-#ifdef R_LINKEDPORTALS
-                                        getThingX(actor, target),
-                                        getThingY(actor, target));
-#else
-                                        target->x, target->y);
-#endif
+         angle_t tang = P_PointToAngle(actor->x, actor->y, getThingX(actor, target),
+                                       getThingY(actor, target));
          angle_t minang = actor->angle - FixedToAngle(fov) / 2;
          angle_t maxang = actor->angle + FixedToAngle(fov) / 2;
 
@@ -530,7 +525,7 @@ static dehflagset_t seekermissile_flagset =
 // args[0] : threshold
 // args[1] : maxturnangle
 // args[2] : flags
-// args[3] : chance
+// args[3] : chance (out of 256) it will try acquire a target if it doesn't have one
 // args[4] : distance
 //
 void A_SeekerMissile(actionargs_t *actionargs)
@@ -562,7 +557,7 @@ void A_SeekerMissile(actionargs_t *actionargs)
 
    if(!dest || dest->health <= 0)
    {
-      if((flags & SMF_LOOK) && P_Random(pr_seekermissile) > chance)
+      if((flags & SMF_LOOK) && P_Random(pr_seekermissile) < chance)
       {
          bool success = false;
 

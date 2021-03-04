@@ -66,6 +66,10 @@ bool P_CheckThingAimAvailability(const Mobj *th, const Mobj *source, bool aimfla
    if(!(th->flags & MF_SHOOTABLE))
       return false; // corpse or something
 
+   // VANILLA_HERETIC: the pods have LOWAIMPRIO so reject hitting them
+   if(vanilla_heretic && th->flags4 & MF4_LOWAIMPRIO)
+      return false;
+
    // killough 7/19/98, 8/2/98:
    // friends don't aim at friends (except players), at least not first
    // ioanch: also avoid aiming for LOWAIMPRIO things
@@ -130,14 +134,14 @@ static bool PTR_AimTraverse(intercept_t *in, void *context)
 
       dist = FixedMul(trace.attackrange, in->frac);
 
-      if(li->frontsector->floorheight != li->backsector->floorheight)
+      if(li->frontsector->srf.floor.height != li->backsector->srf.floor.height)
       {
          slope = FixedDiv(clip.openbottom - trace.z, dist);
          if(slope > trace.bottomslope)
             trace.bottomslope = slope;
       }
 
-      if(li->frontsector->ceilingheight != li->backsector->ceilingheight)
+      if(li->frontsector->srf.ceiling.height != li->backsector->srf.ceiling.height)
       {
          slope = FixedDiv(clip.opentop - trace.z , dist);
          if(slope < trace.topslope)
@@ -206,8 +210,8 @@ fixed_t P_AimLineAttack(Mobj *t1, angle_t angle, fixed_t distance, bool mask)
 
    if(pitch == 0 || demo_version < 333)
    {
-      trace.topslope    =  100*FRACUNIT/160;
-      trace.bottomslope = -100*FRACUNIT/160;
+      trace.topslope    =  DEFAULT_AIM_SLOPE;
+      trace.bottomslope = -DEFAULT_AIM_SLOPE;
    }
    else
    {
@@ -380,9 +384,9 @@ static bool PTR_ShootTraverseVanilla(intercept_t *in, void *context)
          fixed_t slope;
 
          // killough 11/98: simplify
-         if((li->frontsector->floorheight == li->backsector->floorheight ||
+         if((li->frontsector->srf.floor.height == li->backsector->srf.floor.height ||
              (slope = FixedDiv(clip.openbottom - trace.z, dist)) <= trace.aimslope) &&
-            (li->frontsector->ceilingheight == li->backsector->ceilingheight ||
+            (li->frontsector->srf.ceiling.height == li->backsector->srf.ceiling.height ||
              (slope = FixedDiv(clip.opentop - trace.z, dist)) >= trace.aimslope))
          {
             // shot continues
@@ -397,17 +401,17 @@ static bool PTR_ShootTraverseVanilla(intercept_t *in, void *context)
       y = trace.dl.y + FixedMul(trace.dl.dy, frac);
       z = trace.z    + FixedMul(trace.aimslope, FixedMul(frac, trace.attackrange));
 
-      if(R_IsSkyFlat(li->frontsector->ceilingpic))
+      if(R_IsSkyFlat(li->frontsector->srf.ceiling.pic))
       {
          // don't shoot the sky!
-         if(z > li->frontsector->ceilingheight)
+         if(z > li->frontsector->srf.ceiling.height)
             return false;
 
          // it's a sky hack wall
          // fix bullet eaters -- killough
-         if(li->backsector && R_IsSkyFlat(li->backsector->ceilingpic))
+         if(li->backsector && R_IsSkyFlat(li->backsector->srf.ceiling.pic))
          {
-            if(demo_compatibility || li->backsector->ceilingheight < z)
+            if(demo_compatibility || li->backsector->srf.ceiling.height < z)
                return false;
          }
       }
@@ -447,16 +451,16 @@ static bool P_Shoot2SLine(line_t *li, int side, fixed_t dist)
    sector_t *fs = li->frontsector;
    sector_t *bs = li->backsector;
 
-   bool becomp      = (demo_version < 333 || comp[comp_planeshoot]);
-   bool floorsame   = (fs->floorheight   == bs->floorheight   && becomp);
-   bool ceilingsame = (fs->ceilingheight == bs->ceilingheight && becomp);
+   bool becomp      = (demo_version < 333 || getComp(comp_planeshoot));
+   bool floorsame   = (fs->srf.floor.height == bs->srf.floor.height && becomp);
+   bool ceilingsame = (fs->srf.ceiling.height == bs->srf.ceiling.height && becomp);
 
    if((floorsame   || FixedDiv(clip.openbottom - trace.z , dist) <= trace.aimslope) &&
       (ceilingsame || FixedDiv(clip.opentop - trace.z , dist) >= trace.aimslope))
    {
       if(li->special)
          P_ShootSpecialLine(trace.thing, li, side);
-      
+
       return true; // shot continues
    }
 
@@ -533,15 +537,15 @@ static bool PTR_ShootTraverse(intercept_t *in, void *context)
 
       // SoM: If we are in no-clip and are shooting on the backside of a
       // 1s line, don't crash!
-      if(sidesector && !comp[comp_planeshoot])
+      if(sidesector && !getComp(comp_planeshoot))
       {
-         if(z < sidesector->floorheight)
+         if(z < sidesector->srf.floor.height)
          {
-            fixed_t pfrac = FixedDiv(sidesector->floorheight - trace.z, 
+            fixed_t pfrac = FixedDiv(sidesector->srf.floor.height - trace.z,
                                      trace.aimslope);
-            
+
             // SoM: don't check for portals here anymore
-            if(R_IsSkyFlat(sidesector->floorpic) ||
+            if(R_IsSkyFlat(sidesector->srf.floor.pic) ||
                R_IsSkyLikePortalFloor(*sidesector))
             {
                return false;
@@ -549,7 +553,7 @@ static bool PTR_ShootTraverse(intercept_t *in, void *context)
 
             if(demo_version < 333)
             {
-               fixed_t zdiff = FixedDiv(D_abs(z - sidesector->floorheight),
+               fixed_t zdiff = FixedDiv(D_abs(z - sidesector->srf.floor.height),
                                         D_abs(z - trace.z));
                x += FixedMul(trace.dl.x - x, zdiff);
                y += FixedMul(trace.dl.y - y, zdiff);
@@ -560,22 +564,22 @@ static bool PTR_ShootTraverse(intercept_t *in, void *context)
                y = trace.dl.y + FixedMul(trace.sin, pfrac);
             }
 
-            z = sidesector->floorheight;
+            z = sidesector->srf.floor.height;
             hitplane = true;
             updown = 0; // haleyjd
          }
-         else if(z > sidesector->ceilingheight)
+         else if(z > sidesector->srf.ceiling.height)
          {
-            fixed_t pfrac = FixedDiv(sidesector->ceilingheight - trace.z, trace.aimslope);
+            fixed_t pfrac = FixedDiv(sidesector->srf.ceiling.height - trace.z, trace.aimslope);
             if(sidesector->intflags & SIF_SKY ||
                R_IsSkyLikePortalCeiling(*sidesector)) // SoM
             {
                return false;
             }
-            
+
             if(demo_version < 333)
             {
-               fixed_t zdiff = FixedDiv(D_abs(z - sidesector->ceilingheight),
+               fixed_t zdiff = FixedDiv(D_abs(z - sidesector->srf.ceiling.height),
                                         D_abs(z - trace.z));
                x += FixedMul(trace.dl.x - x, zdiff);
                y += FixedMul(trace.dl.y - y, zdiff);
@@ -585,8 +589,8 @@ static bool PTR_ShootTraverse(intercept_t *in, void *context)
                x = trace.dl.x + FixedMul(trace.cos, pfrac);
                y = trace.dl.y + FixedMul(trace.sin, pfrac);
             }
-            
-            z = sidesector->ceilingheight;
+
+            z = sidesector->srf.ceiling.height;
             hitplane = true;
             updown = 1; // haleyjd
          }
@@ -597,29 +601,29 @@ static bool PTR_ShootTraverse(intercept_t *in, void *context)
 
       // don't shoot the sky
       // don't shoot ceiling portals either
-      if(R_IsSkyFlat(li->frontsector->ceilingpic) || li->frontsector->c_portal)
+      if(R_IsSkyFlat(li->frontsector->srf.ceiling.pic) || li->frontsector->srf.ceiling.portal)
       {
          // don't shoot the sky!
-         if(z > li->frontsector->ceilingheight)
+         if(z > li->frontsector->srf.ceiling.height)
             return false;
 
          // it's a sky hack wall
          // fix bullet eaters -- killough
-         if(li->backsector && R_IsSkyFlat(li->backsector->ceilingpic))
+         if(li->backsector && R_IsSkyFlat(li->backsector->srf.ceiling.pic))
          {
-            if(li->backsector->ceilingheight < z)
+            if(li->backsector->srf.ceiling.height < z)
                return false;
          }
       }
 
       if(demo_version >= 342 && li->backsector &&
          ((li->extflags & EX_ML_UPPERPORTAL &&
-            li->backsector->ceilingheight < li->frontsector->ceilingheight &&
-            li->backsector->ceilingheight < z &&
+            li->backsector->srf.ceiling.height < li->frontsector->srf.ceiling.height &&
+            li->backsector->srf.ceiling.height < z &&
             R_IsSkyLikePortalCeiling(*li->backsector)) ||
             (li->extflags & EX_ML_LOWERPORTAL &&
-               li->backsector->floorheight > li->frontsector->floorheight &&
-               li->backsector->floorheight > z &&
+               li->backsector->srf.floor.height > li->frontsector->srf.floor.height &&
+               li->backsector->srf.floor.height > z &&
                R_IsSkyLikePortalFloor(*li->backsector))))
       {
          return false;
@@ -832,7 +836,7 @@ static void check_intercept()
 //
 // killough 5/3/98: reformatted, cleaned up
 //
-static bool PIT_AddLineIntercepts(line_t *ld, polyobj_s *po, void *context)
+static bool PIT_AddLineIntercepts(line_t *ld, polyobj_t *po, void *context)
 {
    int       s1;
    int       s2;
